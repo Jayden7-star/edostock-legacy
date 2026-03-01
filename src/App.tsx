@@ -6,6 +6,16 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import Inventory from "./pages/Inventory";
+import CsvImport from "./pages/CsvImport";
+import Alerts from "./pages/Alerts";
+import Stocktake from "./pages/Stocktake";
+import AbcAnalysis from "./pages/AbcAnalysis";
+import SeasonalAnalysis from "./pages/SeasonalAnalysis";
+import Forecast from "./pages/Forecast";
+import Recommendations from "./pages/Recommendations";
+import ProductSettings from "./pages/ProductSettings";
+import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +30,16 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Index />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/import" element={<CsvImport />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/stocktake" element={<Stocktake />} />
+            <Route path="/analytics/abc" element={<AbcAnalysis />} />
+            <Route path="/analytics/seasonal" element={<SeasonalAnalysis />} />
+            <Route path="/analytics/forecast" element={<Forecast />} />
+            <Route path="/analytics/recommendations" element={<Recommendations />} />
+            <Route path="/settings/products" element={<ProductSettings />} />
+            <Route path="/settings/users" element={<UserSettings />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
