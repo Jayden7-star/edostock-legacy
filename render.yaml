@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: edostock
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm install && npx vite build && npx prisma generate && npx prisma db push && npx tsx prisma/seed.ts
+    startCommand: NODE_ENV=production npx tsx server/index.ts
+    disk:
+      name: edostock-data
+      mountPath: /opt/render/project/src/prisma
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        value: file:./production.db
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
