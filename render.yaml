@@ -4,7 +4,7 @@ services:
     runtime: node
     region: singapore
     plan: starter
-    buildCommand: npm install && npx vite build && npx prisma generate && npx prisma db push && npx tsx prisma/seed.ts
+    buildCommand: npm install --include=dev && npx vite build && npx prisma generate && npx prisma db push && npx tsx prisma/seed.ts
     startCommand: NODE_ENV=production npx tsx server/index.ts
     disk:
       name: edostock-data
