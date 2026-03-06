@@ -31,6 +31,11 @@ const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:3001",
 ];
+
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+}
 app.use(
     cors({
         origin: (origin, callback) => {
@@ -102,8 +107,7 @@ app.get("/api/health", (_req, res) => {
 
 // 本番環境: dist/ の静的ファイルを配信（APIルートより後に追加）
 if (process.env.NODE_ENV === "production") {
-    const distPath = path.resolve(__dirname, "../dist");
-    app.use(express.static(distPath));
+    const distPath = path.join(process.cwd(), "dist");
     app.get("*splat", (req, res) => {
         if (!req.path.startsWith("/api")) {
             res.sendFile(path.join(distPath, "index.html"));
@@ -115,7 +119,7 @@ app.listen(PORT, () => {
     console.log(`🚀 EdoStock API サーバー起動: http://localhost:${PORT}`);
 
     // 日次自動同期: 毎日 AM 3:00 に前日の販売データを同期
-    cron.schedule("0 3 * * *", async () => {
+    cron.schedule("0 6 * * *", async () => {
         console.log("[CRON] スマレジ日次同期を開始...");
         try {
             const config = await prisma.smaregiConfig.findFirst();
