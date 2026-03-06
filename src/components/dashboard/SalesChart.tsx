@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const mockData = [
+const defaultData = [
   { month: "4月", sales: 4259114 },
   { month: "5月", sales: 4523000 },
   { month: "6月", sales: 3980000 },
@@ -44,7 +44,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const SalesChart = () => {
+interface SalesChartProps {
+  data?: { month: string; sales: number }[];
+}
+
+const SalesChart = ({ data }: SalesChartProps) => {
+  const chartData = data && data.length > 0 ? data : defaultData;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -58,7 +64,7 @@ const SalesChart = () => {
       </div>
       <div className="h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={mockData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="hsl(348, 78%, 58%)" stopOpacity={0.35} />

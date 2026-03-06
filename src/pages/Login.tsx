@@ -18,15 +18,37 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // デモ用：任意の入力でログイン可能
-    setTimeout(() => {
-      setIsLoading(false);
-      toast({
-        title: "ログイン成功",
-        description: "EdoStockへようこそ",
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
       });
-      navigate("/");
-    }, 800);
+      const data = await res.json();
+
+      if (res.ok) {
+        toast({
+          title: "ログイン成功",
+          description: `${data.user.name}さん、EdoStockへようこそ`,
+        });
+        navigate("/");
+      } else {
+        toast({
+          title: "ログイン失敗",
+          description: data.error || "メールアドレスまたはパスワードが正しくありません",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "接続エラー",
+        description: "サーバーに接続できません",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -147,7 +169,7 @@ const Login = () => {
             className="mt-6 p-3 rounded-lg bg-accent/10 border border-accent/20"
           >
             <p className="text-xs text-accent text-center">
-              デモモード：任意のメール・パスワードでログインできます
+              デモ: admin@edoichi.com / admin123
             </p>
           </motion.div>
         </div>

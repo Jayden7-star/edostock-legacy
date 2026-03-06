@@ -16,6 +16,7 @@ import Forecast from "./pages/Forecast";
 import Recommendations from "./pages/Recommendations";
 import ProductSettings from "./pages/ProductSettings";
 import UserSettings from "./pages/UserSettings";
+import SmaregiSettings from "./pages/SmaregiSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/analytics/recommendations" element={<Recommendations />} />
             <Route path="/settings/products" element={<ProductSettings />} />
             <Route path="/settings/users" element={<UserSettings />} />
+            <Route path="/settings/smaregi" element={<SmaregiSettings />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

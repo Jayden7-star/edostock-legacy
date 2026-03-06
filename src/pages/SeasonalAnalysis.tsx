@@ -1,30 +1,29 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
-const monthlyData = [
-  { month: "4月", sales: 4259114, prevYear: 3980000 },
-  { month: "5月", sales: 4523000, prevYear: 4200000 },
-  { month: "6月", sales: 3980000, prevYear: 3850000 },
-  { month: "7月", sales: 3456000, prevYear: 3300000 },
-  { month: "8月", sales: 3210000, prevYear: 3100000 },
-  { month: "9月", sales: 3780000, prevYear: 3600000 },
-  { month: "10月", sales: 4120000, prevYear: 3950000 },
-  { month: "11月", sales: 4890000, prevYear: 4700000 },
-  { month: "12月", sales: 11630736, prevYear: 10800000 },
-  { month: "1月", sales: 3520000, prevYear: 3400000 },
-  { month: "2月", sales: 3180000, prevYear: 3050000 },
-  { month: "3月", sales: 4350000, prevYear: 4100000 },
-];
+interface MonthlyTrendItem {
+  month: string;
+  sales: number;
+  prevYear: number | null;
+}
 
-const heatmapData = [
-  { month: "4月", value: 4.2 }, { month: "5月", value: 4.5 }, { month: "6月", value: 4.0 },
-  { month: "7月", value: 3.5 }, { month: "8月", value: 3.2 }, { month: "9月", value: 3.8 },
-  { month: "10月", value: 4.1 }, { month: "11月", value: 4.9 }, { month: "12月", value: 11.6 },
-  { month: "1月", value: 3.5 }, { month: "2月", value: 3.2 }, { month: "3月", value: 4.4 },
-];
+interface HeatmapItem {
+  month: string;
+  value: number;
+}
+
+interface SeasonalData {
+  monthlyTrend: MonthlyTrendItem[];
+  heatmap: HeatmapItem[];
+  insight: string | null;
+  dataStatus: string;
+}
 
 const getHeatColor = (v: number) => {
   if (v > 8) return "bg-primary text-primary-foreground";
@@ -50,6 +49,40 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const SeasonalAnalysis = () => {
+  const [data, setData] = useState<SeasonalData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetch("/api/analytics/seasonal", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => toast({ title: "エラー", description: "季節性分析データの取得に失敗しました", variant: "destructive" }))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="glass-card p-5 h-32 shimmer" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!data || data.dataStatus === "insufficient") {
+    return (
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-12 text-center">
+        <FileDown className="w-12 h-12 mx-auto mb-3 opacity-30 text-muted-foreground" />
+        <p className="text-muted-foreground">月次売上データがありません</p>
+        <p className="text-sm text-muted-foreground mt-1">CSVデータをインポートしてください</p>
+      </motion.div>
+    );
+  }
+
+  const { monthlyTrend, heatmap, insight } = data;
+
   return (
     <div className="space-y-6">
       {/* 月別売上トレンド */}
@@ -57,7 +90,7 @@ const SeasonalAnalysis = () => {
         <h3 className="text-base font-semibold mb-4">月別売上トレンド（前年比較）</h3>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <AreaChart data={monthlyTrend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="hsl(348, 78%, 58%)" stopOpacity={0.3} />
@@ -70,7 +103,7 @@ const SeasonalAnalysis = () => {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 20%)" />
               <XAxis dataKey="month" tick={{ fill: "hsl(220, 10%, 55%)", fontSize: 12 }} />
-              <YAxis tick={{ fill: "hsl(220, 10%, 55%)", fontSize: 11 }} tickFormatter={(v: number) => `${(v/10000).toFixed(0)}万`} />
+              <YAxis tick={{ fill: "hsl(220, 10%, 55%)", fontSize: 11 }} tickFormatter={(v: number) => `${(v / 10000).toFixed(0)}万`} />
               <Tooltip content={<CustomTooltip />} />
               <Area type="monotone" dataKey="prevYear" stroke="hsl(220, 10%, 55%)" strokeWidth={1.5} strokeDasharray="4 4" fill="url(#prevGrad)" dot={false} />
               <Area type="monotone" dataKey="sales" stroke="hsl(348, 78%, 58%)" strokeWidth={2.5} fill="url(#salesGrad)" dot={false}
@@ -88,7 +121,7 @@ const SeasonalAnalysis = () => {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card p-5">
         <h3 className="text-base font-semibold mb-4">月別売上ヒートマップ</h3>
         <div className="grid grid-cols-6 lg:grid-cols-12 gap-2">
-          {heatmapData.map((d) => (
+          {heatmap.map((d) => (
             <div
               key={d.month}
               className={cn("rounded-lg p-3 text-center transition-colors", getHeatColor(d.value))}
@@ -98,14 +131,15 @@ const SeasonalAnalysis = () => {
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground mt-3">📌 12月は通常月の約3倍の売上。11月から仕入れを強化する必要があります。</p>
       </motion.div>
 
       {/* インサイト */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-        className="glass-card p-4 border-accent/20">
-        <p className="text-sm">💡 <span className="font-semibold">季節パターン:</span> 夏季（7-9月）は閑散期で月商約300万円台。12月の繁忙期に向けて10月から在庫積み増しを推奨します。</p>
-      </motion.div>
+      {insight && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+          className="glass-card p-4 border-accent/20">
+          <p className="text-sm">💡 <span className="font-semibold">季節パターン:</span> {insight}</p>
+        </motion.div>
+      )}
     </div>
   );
 };

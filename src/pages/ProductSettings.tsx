@@ -1,31 +1,160 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Search, Plus, Pencil, Trash2 } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 
-const categories = ["佃煮（自社）", "佃煮（仕入）", "佃煮（リパック）", "煮豆", "菓子", "混ぜご飯の素", "雑貨", "Tシャツ", "特売", "その他（仕入）"];
+interface Category {
+  id: number;
+  name: string;
+  displayName: string;
+}
 
-const mockProducts = [
-  { id: 1, janCode: "4970974100005", name: "江戸一昆布", category: "佃煮（自社）", costPrice: 200, sellingPrice: 495, reorderPoint: 10, optimalStock: 30, supplyType: "自社製造" },
-  { id: 2, janCode: "4970974101262", name: "一口ほたて(大)", category: "佃煮（自社）", costPrice: 450, sellingPrice: 893, reorderPoint: 8, optimalStock: 20, supplyType: "自社製造" },
-  { id: 3, janCode: "4970974200001", name: "しそ巻き", category: "佃煮（仕入）", costPrice: 380, sellingPrice: 650, reorderPoint: 5, optimalStock: 15, supplyType: "仕入商品" },
-  { id: 4, janCode: "4970974300002", name: "ちりめん山椒", category: "佃煮（リパック）", costPrice: 400, sellingPrice: 750, reorderPoint: 7, optimalStock: 20, supplyType: "リパック" },
-  { id: 5, janCode: "4970974400003", name: "黒豆", category: "煮豆", costPrice: 280, sellingPrice: 540, reorderPoint: 5, optimalStock: 12, supplyType: "仕入商品" },
-  { id: 6, janCode: "4970974502274", name: "タオル 桜富士", category: "雑貨", costPrice: 400, sellingPrice: 990, reorderPoint: 20, optimalStock: 100, supplyType: "仕入商品" },
+interface Product {
+  id: number;
+  janCode: string;
+  name: string;
+  color: string | null;
+  size: string | null;
+  category: Category;
+  categoryId: number;
+  costPrice: number;
+  sellingPrice: number;
+  reorderPoint: number;
+  optimalStock: number;
+  supplyType: string;
+}
+
+const supplyTypes = [
+  { value: "SELF_MANUFACTURED", label: "自社製造" },
+  { value: "PURCHASED", label: "仕入商品" },
+  { value: "REPACK", label: "リパック" },
 ];
 
+const supplyLabel = (type: string) => supplyTypes.find((s) => s.value === type)?.label || type;
+
+const emptyForm = {
+  janCode: "", name: "", categoryId: "", costPrice: "", sellingPrice: "",
+  reorderPoint: "", optimalStock: "", supplyType: "PURCHASED", color: "", size: "",
+};
+
 const ProductSettings = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
 
-  const filtered = mockProducts.filter(
+  const fetchProducts = useCallback(() => {
+    setLoading(true);
+    fetch("/api/products", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setProducts)
+      .catch(() => toast({ title: "エラー", description: "商品データの取得に失敗しました", variant: "destructive" }))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProducts();
+    fetch("/api/products/categories", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setCategories)
+      .catch(() => { });
+  }, [fetchProducts]);
+
+  const filtered = products.filter(
     (p) => p.name.includes(search) || p.janCode.includes(search)
   );
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+
+  const openEdit = (p: Product) => {
+    setEditingId(p.id);
+    setForm({
+      janCode: p.janCode,
+      name: p.name,
+      categoryId: String(p.categoryId),
+      costPrice: String(p.costPrice),
+      sellingPrice: String(p.sellingPrice),
+      reorderPoint: String(p.reorderPoint),
+      optimalStock: String(p.optimalStock),
+      supplyType: p.supplyType,
+      color: p.color || "",
+      size: p.size || "",
+    });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.janCode || !form.name || !form.categoryId) {
+      toast({ title: "入力エラー", description: "商品コード、商品名、部門は必須です", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const url = editingId ? `/api/products/${editingId}` : "/api/products";
+      const method = editingId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: editingId ? "更新完了" : "登録完了", description: `${form.name} を${editingId ? "更新" : "登録"}しました` });
+        setModalOpen(false);
+        fetchProducts();
+      } else {
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (p: Product) => {
+    if (!confirm(`「${p.name}」を削除しますか？\n（論理削除：在庫履歴は保持されます）`)) return;
+    try {
+      const res = await fetch(`/api/products/${p.id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        toast({ title: "削除完了", description: `${p.name} を削除しました` });
+        fetchProducts();
+      } else {
+        const data = await res.json();
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    }
+  };
+
+  const updateField = (field: string, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="glass-card p-5 h-16 shimmer" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -35,7 +164,7 @@ const ProductSettings = () => {
           <Input placeholder="商品名・JANで検索..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="pl-10 bg-secondary/50 border-border/50 h-10" />
         </div>
-        <Button className="bg-primary hover:bg-primary/90 gap-2" onClick={() => setModalOpen(true)}>
+        <Button className="bg-primary hover:bg-primary/90 gap-2" onClick={openAdd}>
           <Plus className="w-4 h-4" /> 商品追加
         </Button>
       </motion.div>
@@ -61,52 +190,96 @@ const ProductSettings = () => {
                 <tr key={p.id} className="border-b border-border/30 hover:bg-secondary/30 transition-colors">
                   <td className="py-3 px-4 font-num text-xs text-muted-foreground">{p.janCode}</td>
                   <td className="py-3 px-4 font-medium">{p.name}</td>
-                  <td className="py-3 px-4"><Badge variant="outline" className="text-xs">{p.category}</Badge></td>
-                  <td className="py-3 px-4 text-xs text-muted-foreground">{p.supplyType}</td>
+                  <td className="py-3 px-4"><Badge variant="outline" className="text-xs">{p.category.displayName}</Badge></td>
+                  <td className="py-3 px-4 text-xs text-muted-foreground">{supplyLabel(p.supplyType)}</td>
                   <td className="py-3 px-4 text-right font-num">¥{p.costPrice.toLocaleString()}</td>
                   <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
                   <td className="py-3 px-4 text-right font-num">{p.reorderPoint}</td>
                   <td className="py-3 px-4 text-right font-num">{p.optimalStock}</td>
                   <td className="py-3 px-4">
                     <div className="flex justify-center gap-1">
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0"><Pencil className="w-3.5 h-3.5" /></Button>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => openEdit(p)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => handleDelete(p)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>商品が登録されていません</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </motion.div>
 
-      {/* 商品追加モーダル */}
+      {/* 商品追加/編集モーダル */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="bg-card border-border/50 max-w-lg">
-          <DialogHeader><DialogTitle>商品を追加</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingId ? "商品を編集" : "商品を追加"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
-            <div className="col-span-2 space-y-2"><Label>商品コード(JAN)</Label><Input className="bg-secondary/50 border-border/50 h-10" /></div>
-            <div className="col-span-2 space-y-2"><Label>商品名</Label><Input className="bg-secondary/50 border-border/50 h-10" /></div>
+            <div className="col-span-2 space-y-2">
+              <Label>商品コード(JAN)</Label>
+              <Input value={form.janCode} onChange={(e) => updateField("janCode", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" disabled={!!editingId} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>商品名</Label>
+              <Input value={form.name} onChange={(e) => updateField("name", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" />
+            </div>
             <div className="space-y-2">
               <Label>部門</Label>
-              <Select><SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
-                <SelectContent>{categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              <Select value={form.categoryId} onValueChange={(v) => updateField("categoryId", v)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>供給タイプ</Label>
-              <Select><SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
-                <SelectContent><SelectItem value="self">自社製造</SelectItem><SelectItem value="purchase">仕入商品</SelectItem><SelectItem value="repack">リパック</SelectItem></SelectContent>
+              <Select value={form.supplyType} onValueChange={(v) => updateField("supplyType", v)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
+                <SelectContent>
+                  {supplyTypes.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2"><Label>原価(円)</Label><Input type="number" className="bg-secondary/50 border-border/50 h-10" /></div>
-            <div className="space-y-2"><Label>売価(円)</Label><Input type="number" className="bg-secondary/50 border-border/50 h-10" /></div>
-            <div className="space-y-2"><Label>発注点</Label><Input type="number" className="bg-secondary/50 border-border/50 h-10" /></div>
-            <div className="space-y-2"><Label>適正在庫</Label><Input type="number" className="bg-secondary/50 border-border/50 h-10" /></div>
+            <div className="space-y-2">
+              <Label>原価(円)</Label>
+              <Input type="number" value={form.costPrice} onChange={(e) => updateField("costPrice", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" />
+            </div>
+            <div className="space-y-2">
+              <Label>売価(円)</Label>
+              <Input type="number" value={form.sellingPrice} onChange={(e) => updateField("sellingPrice", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" />
+            </div>
+            <div className="space-y-2">
+              <Label>発注点</Label>
+              <Input type="number" value={form.reorderPoint} onChange={(e) => updateField("reorderPoint", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" />
+            </div>
+            <div className="space-y-2">
+              <Label>適正在庫</Label>
+              <Input type="number" value={form.optimalStock} onChange={(e) => updateField("optimalStock", e.target.value)}
+                className="bg-secondary/50 border-border/50 h-10" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>キャンセル</Button>
-            <Button className="bg-primary hover:bg-primary/90" onClick={() => setModalOpen(false)}>保存</Button>
+            <Button className="bg-primary hover:bg-primary/90" onClick={handleSave} disabled={submitting}>
+              {submitting ? "処理中..." : "保存"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

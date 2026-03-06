@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Search, Filter, Package, Plus, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface Product {
   id: number;
   name: string;
   janCode: string;
-  category: string;
+  category: { displayName: string };
   currentStock: number;
   reorderPoint: number;
   optimalStock: number;
@@ -21,20 +22,6 @@ interface Product {
   costPrice: number;
 }
 
-const mockProducts: Product[] = [
-  { id: 1, name: "江戸一昆布", janCode: "4970974100005", category: "佃煮（自社）", currentStock: 0, reorderPoint: 10, optimalStock: 30, sellingPrice: 495, costPrice: 200 },
-  { id: 2, name: "一口ほたて(大)", janCode: "4970974101262", category: "佃煮（自社）", currentStock: 2, reorderPoint: 8, optimalStock: 20, sellingPrice: 893, costPrice: 450 },
-  { id: 3, name: "しそ巻き", janCode: "4970974200001", category: "佃煮（仕入）", currentStock: 3, reorderPoint: 5, optimalStock: 15, sellingPrice: 650, costPrice: 380 },
-  { id: 4, name: "ちりめん山椒", janCode: "4970974300002", category: "佃煮（リパック）", currentStock: 5, reorderPoint: 7, optimalStock: 20, sellingPrice: 750, costPrice: 400 },
-  { id: 5, name: "黒豆", janCode: "4970974400003", category: "煮豆", currentStock: 4, reorderPoint: 5, optimalStock: 12, sellingPrice: 540, costPrice: 280 },
-  { id: 6, name: "タオル 桜富士", janCode: "4970974502274", category: "雑貨", currentStock: 82, reorderPoint: 20, optimalStock: 100, sellingPrice: 990, costPrice: 400 },
-  { id: 7, name: "五目まぜご飯の素", janCode: "4970974600001", category: "混ぜご飯の素", currentStock: 15, reorderPoint: 5, optimalStock: 20, sellingPrice: 480, costPrice: 220 },
-  { id: 8, name: "ジップパーカー ブラウン XL", janCode: "4970974503516", category: "Tシャツ", currentStock: 8, reorderPoint: 2, optimalStock: 6, sellingPrice: 7000, costPrice: 3500 },
-  { id: 9, name: "特売 1200", janCode: "4970974503684", category: "特売", currentStock: 25, reorderPoint: 10, optimalStock: 40, sellingPrice: 1200, costPrice: 600 },
-  { id: 10, name: "ばかうけ", janCode: "4970974700002", category: "菓子", currentStock: 12, reorderPoint: 5, optimalStock: 15, sellingPrice: 320, costPrice: 180 },
-];
-
-const categories = ["すべて", "佃煮（自社）", "佃煮（仕入）", "佃煮（リパック）", "煮豆", "菓子", "混ぜご飯の素", "雑貨", "Tシャツ", "特売"];
 const stockStatuses = ["すべて", "在庫切れ", "発注点以下", "十分"];
 
 type StockStatus = "outOfStock" | "belowReorder" | "sufficient";
@@ -52,16 +39,38 @@ const statusConfig: Record<StockStatus, { label: string; dot: string; bg: string
 };
 
 const Inventory = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("すべて");
   const [stockFilter, setStockFilter] = useState("すべて");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"purchase" | "adjust">("purchase");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [quantity, setQuantity] = useState("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
 
-  const filtered = mockProducts.filter((p) => {
+  const fetchProducts = useCallback(() => {
+    setLoading(true);
+    fetch("/api/inventory", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setProducts)
+      .catch(() => toast({ title: "エラー", description: "在庫データの取得に失敗しました", variant: "destructive" }))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  // Build categories dynamically from product data
+  const categories = ["すべて", ...Array.from(new Set(products.map((p) => p.category.displayName)))];
+
+  const filtered = products.filter((p) => {
     const matchSearch = p.name.includes(search) || p.janCode.includes(search);
-    const matchCat = category === "すべて" || p.category === category;
+    const matchCat = category === "すべて" || p.category.displayName === category;
     const status = getStockStatus(p);
     const matchStatus =
       stockFilter === "すべて" ||
@@ -73,6 +82,57 @@ const Inventory = () => {
 
   const grossMargin = (p: Product) =>
     p.costPrice > 0 ? (((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100).toFixed(1) : "—";
+
+  const openModal = (p: Product, type: "purchase" | "adjust") => {
+    setSelectedProduct(p);
+    setModalType(type);
+    setQuantity("");
+    setNote("");
+    setModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedProduct || !quantity) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          productId: selectedProduct.id,
+          quantity: parseInt(quantity),
+          note: note || undefined,
+          type: modalType === "purchase" ? "PURCHASE" : "ADJUSTMENT",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({
+          title: modalType === "purchase" ? "入庫完了" : "在庫調整完了",
+          description: `${selectedProduct.name}: 在庫 → ${data.newStock}`,
+        });
+        setModalOpen(false);
+        fetchProducts();
+      } else {
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="glass-card p-5 h-16 shimmer" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -157,7 +217,7 @@ const Inventory = () => {
                     </td>
                     <td className="py-3 px-4 font-medium">{p.name}</td>
                     <td className="py-3 px-4">
-                      <Badge variant="outline" className="text-xs border-border/50">{p.category}</Badge>
+                      <Badge variant="outline" className="text-xs border-border/50">{p.category.displayName}</Badge>
                     </td>
                     <td className={cn("py-3 px-4 text-right font-num font-semibold", cfg.bg)}>{p.currentStock}</td>
                     <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
@@ -171,7 +231,7 @@ const Inventory = () => {
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
-                          onClick={() => { setSelectedProduct(p); setModalType("purchase"); setModalOpen(true); }}
+                          onClick={() => openModal(p, "purchase")}
                         >
                           <Plus className="w-4 h-4" />
                         </Button>
@@ -179,7 +239,7 @@ const Inventory = () => {
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => { setSelectedProduct(p); setModalType("adjust"); setModalOpen(true); }}
+                          onClick={() => openModal(p, "adjust")}
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -188,6 +248,14 @@ const Inventory = () => {
                   </motion.tr>
                 );
               })}
+              {filtered.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>該当する商品がありません</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -207,17 +275,32 @@ const Inventory = () => {
             </div>
             <div className="space-y-2">
               <Label>{modalType === "purchase" ? "入庫数量" : "調整後在庫数"}</Label>
-              <Input type="number" placeholder="0" className="bg-secondary/50 border-border/50 h-11" />
+              <Input
+                type="number"
+                placeholder="0"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className="bg-secondary/50 border-border/50 h-11"
+              />
             </div>
             <div className="space-y-2">
               <Label>備考</Label>
-              <Input placeholder="備考を入力..." className="bg-secondary/50 border-border/50 h-11" />
+              <Input
+                placeholder="備考を入力..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="bg-secondary/50 border-border/50 h-11"
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>キャンセル</Button>
-            <Button className="bg-primary hover:bg-primary/90" onClick={() => setModalOpen(false)}>
-              確定
+            <Button
+              className="bg-primary hover:bg-primary/90"
+              onClick={handleSubmit}
+              disabled={submitting || !quantity}
+            >
+              {submitting ? "処理中..." : "確定"}
             </Button>
           </DialogFooter>
         </DialogContent>

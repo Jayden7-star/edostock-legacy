@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -17,6 +17,7 @@ import {
   Database,
   Users,
   LogOut,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,7 @@ const navItems: NavItem[] = [
     children: [
       { label: "商品マスタ", icon: Database, path: "/settings/products" },
       { label: "ユーザー管理", icon: Users, path: "/settings/users" },
+      { label: "スマレジ連携", icon: RefreshCw, path: "/settings/smaregi" },
     ],
   },
 ];
@@ -80,7 +82,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
     >
       {/* ロゴ */}
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-3 min-w-0">
+        <Link to="/" className="flex items-center gap-3 min-w-0 cursor-pointer">
           <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center flex-shrink-0">
             <span className="text-sm font-bold edo-gradient-text">江</span>
           </div>
@@ -97,7 +99,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </Link>
       </div>
 
       {/* ナビゲーション */}
@@ -201,7 +203,8 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
       {/* 折りたたみ＋ログアウト */}
       <div className="px-3 py-3 border-t border-sidebar-border space-y-1">
         <button
-          onClick={() => {
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
             window.location.href = "/login";
           }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
@@ -218,7 +221,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
           />
         </button>
       </div>
-    </motion.aside>
+    </motion.aside >
   );
 };
 
