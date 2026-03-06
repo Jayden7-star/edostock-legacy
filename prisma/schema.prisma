@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         String    @default("STAFF")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  transactions  InventoryTransaction[]
+  csvImports    CsvImport[]
+  stocktakes    Stocktake[]
+  activityLogs  ActivityLog[]
+
+  @@map("users")
+}
+
+model Category {
+  id           Int       @id @default(autoincrement())
+  name         String    @unique
+  displayName  String    @map("display_name")
+  isFood       Boolean   @default(false) @map("is_food")
+  displayOrder Int       @default(0) @map("display_order")
+  products     Product[]
+  @@map("categories")
+}
+
+model Product {
+  id            Int       @id @default(autoincrement())
+  janCode       String    @unique @map("jan_code")
+  name          String
+  color         String?
+  size          String?
+  categoryId    Int       @map("category_id")
+  costPrice     Int       @default(0) @map("cost_price")
+  sellingPrice  Int       @default(0) @map("selling_price")
+  currentStock  Int       @default(0) @map("current_stock")
+  reorderPoint  Int       @default(0) @map("reorder_point")
+  optimalStock  Int       @default(0) @map("optimal_stock")
+  supplyType    String    @default("PURCHASED")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  category        Category              @relation(fields: [categoryId], references: [id])
+  transactions    InventoryTransaction[]
+  salesRecords    SalesRecord[]
+  inventoryCounts InventoryCount[]
+  @@map("products")
+}
+
+model InventoryTransaction {
+  id          Int      @id @default(autoincrement())
+  productId   Int      @map("product_id")
+  type        String
+  quantity    Int
+  stockAfter  Int      @map("stock_after")
+  note        String?
+  userId      Int      @map("user_id")
+  csvImportId Int?     @map("csv_import_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  product   Product    @relation(fields: [productId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  csvImport CsvImport? @relation(fields: [csvImportId], references: [id])
+  @@map("inventory_transactions")
+}
+
+model CsvImport {
+  id          Int      @id @default(autoincrement())
+  filename    String
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  csvType     String   @map("csv_type")
+  recordCount Int      @map("record_count")
+  userId      Int      @map("user_id")
+  status      String   @default("PENDING")
+  importedAt  DateTime @default(now()) @map("imported_at")
+
+  user         User                   @relation(fields: [userId], references: [id])
+  salesRecords SalesRecord[]
+  transactions InventoryTransaction[]
+  monthlySales MonthlySales[]
+  @@map("csv_imports")
+}
+
+model SalesRecord {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  csvImportId  Int      @map("csv_import_id")
+  periodStart  DateTime @map("period_start")
+  periodEnd    DateTime @map("period_end")
+  quantitySold Int      @map("quantity_sold")
+  netSales     Int      @map("net_sales")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product   Product   @relation(fields: [productId], references: [id])
+  csvImport CsvImport @relation(fields: [csvImportId], references: [id])
+  @@map("sales_records")
+}
+
+model MonthlySales {
+  id             Int      @id @default(autoincrement())
+  month          DateTime @unique
+  netSales       Int      @map("net_sales")
+  netSalesExTax  Int      @map("net_sales_ex_tax")
+  taxAmount      Int      @map("tax_amount")
+  grossSales     Int      @map("gross_sales")
+  discountAmount Int      @map("discount_amount")
+  itemsSold      Int      @map("items_sold")
+  returns        Int      @default(0)
+  transactions   Int      @default(0)
+  transactionAvg Int      @default(0) @map("transaction_avg")
+  customers      Int      @default(0)
+  customerAvg    Int      @default(0) @map("customer_avg")
+  csvImportId    Int      @map("csv_import_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  csvImport CsvImport @relation(fields: [csvImportId], references: [id])
+  @@map("monthly_sales")
+}
+
+model Stocktake {
+  id               Int       @id @default(autoincrement())
+  stocktakeDate    DateTime  @map("stocktake_date")
+  status           String    @default("IN_PROGRESS")
+  totalProducts    Int       @default(0) @map("total_products")
+  discrepancyCount Int       @default(0) @map("discrepancy_count")
+  userId           Int       @map("user_id")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+
+  user   User             @relation(fields: [userId], references: [id])
+  counts InventoryCount[]
+  @@map("stocktakes")
+}
+
+model InventoryCount {
+  id               Int      @id @default(autoincrement())
+  stocktakeId      Int      @map("stocktake_id")
+  productId        Int      @map("product_id")
+  theoreticalStock Int      @map("theoretical_stock")
+  actualStock      Int?     @map("actual_stock")
+  discrepancy      Int?
+  reason           String   @default("NONE")
+  note             String?
+
+  stocktake Stocktake @relation(fields: [stocktakeId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+  @@unique([stocktakeId, productId])
+  @@map("inventory_counts")
+}
+
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  action      String
+  targetType  String?  @map("target_type")
+  targetId    Int?     @map("target_id")
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+  @@map("activity_logs")
+}
+
+model SmaregiConfig {
+  id            Int       @id @default(autoincrement())
+  contractId    String    @map("contract_id")
+  clientId      String    @map("client_id")
+  clientSecret  String    @map("client_secret")
+  accessToken   String?   @map("access_token")
+  refreshToken  String?   @map("refresh_token")
+  tokenExpiry   DateTime? @map("token_expiry")
+  lastSyncAt    DateTime? @map("last_sync_at")
+  syncEnabled   Boolean   @default(false) @map("sync_enabled")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("smaregi_configs")
+}
+
+model SmaregiSyncLog {
+  id           Int      @id @default(autoincrement())
+  syncDate     DateTime @default(now()) @map("sync_date")
+  recordCount  Int      @default(0) @map("record_count")
+  status       String   @default("PENDING")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("smaregi_sync_logs")
+}
