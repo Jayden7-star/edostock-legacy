@@ -99,7 +99,7 @@ app.get("/api/health", (_req, res) => {
 
 // 本番環境: dist/ の静的ファイルを配信（APIルートより後に追加）
 if (process.env.NODE_ENV === "production") {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.resolve(__dirname, "../dist");
     app.use(express.static(distPath));
     app.get("*splat", (req, res) => {
         if (!req.path.startsWith("/api")) {
