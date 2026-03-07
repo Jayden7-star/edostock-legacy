@@ -139,10 +139,13 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
         // Auto-register unmatched products
         if (!productId && item.autoRegister) {
             const categoryId = await getOrCreateDefaultCategory();
-            const newProduct = await prisma.product.create({
-                data: {
+            const janCode = item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const newProduct = await prisma.product.upsert({
+                where: { janCode },
+                update: {},
+                create: {
                     name: item.csvName || "不明な商品",
-                    janCode: item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    janCode,
                     categoryId,
                     costPrice: item.unitCost || 0,
                     sellingPrice: 0,
@@ -390,10 +393,13 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
             // Auto-register unmatched products
             if (!productId && item.autoRegister) {
                 const categoryId = await getOrCreateDefaultCategory();
-                const newProduct = await prisma.product.create({
-                    data: {
+                const janCode = item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                const newProduct = await prisma.product.upsert({
+                    where: { janCode },
+                    update: {},
+                    create: {
                         name: item.productName || "不明な商品",
-                        janCode: item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        janCode,
                         categoryId,
                         costPrice: item.unitPrice || 0,
                         sellingPrice: 0,
@@ -674,10 +680,13 @@ purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
             if (!productId && item.autoRegister) {
                 const categoryId = await getOrCreateDefaultCategory();
                 const productName = [item.design, item.color, item.size].filter(Boolean).join(" ");
-                const newProduct = await prisma.product.create({
-                    data: {
+                const janCode = `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                const newProduct = await prisma.product.upsert({
+                    where: { janCode },
+                    update: {},
+                    create: {
                         name: productName || "不明な商品",
-                        janCode: `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        janCode,
                         categoryId,
                         costPrice: 0,
                         sellingPrice: 0,
