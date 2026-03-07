@@ -33,10 +33,6 @@ const allowedOrigins = [
     "https://edostock.onrender.com",
 ];
 
-if (process.env.NODE_ENV === "production") {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-}
 app.use(
     cors({
         origin: (origin, callback) => {
@@ -109,10 +105,9 @@ app.get("/api/health", (_req, res) => {
 // 本番環境: dist/ の静的ファイルを配信（APIルートより後に追加）
 if (process.env.NODE_ENV === "production") {
     const distPath = path.join(process.cwd(), "dist");
-    app.get("*splat", (req, res) => {
-        if (!req.path.startsWith("/api")) {
-            res.sendFile(path.join(distPath, "index.html"));
-        }
+    app.use(express.static(distPath));
+    app.get("*splat", (_req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
     });
 }
 
