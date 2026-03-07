@@ -109,7 +109,22 @@ authRouter.put("/users/:id", async (req, res) => {
             return res.status(403).json({ error: "管理者権限が必要です" });
         }
         const { id } = req.params;
-        const { name, email, password, role } = req.body;
+        const { name, email, password, role, currentPassword } = req.body;
+        const isSelf = (req.session as any).userId === parseInt(id);
+
+        // 自分自身の編集の場合は現行パスワードを確認
+        if (isSelf) {
+            if (!currentPassword) {
+                return res.status(400).json({ error: "現在のパスワードを入力してください" });
+            }
+            const user = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+            if (!user) return res.status(404).json({ error: "ユーザーが見つかりません" });
+            const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+            if (!isValid) {
+                return res.status(401).json({ error: "現在のパスワードが正しくありません" });
+            }
+        }
+
         const data: any = {};
         if (name) data.name = name;
         if (email) data.email = email;
