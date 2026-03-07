@@ -1,7 +1,22 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Lightbulb, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const RecommendationBanner = () => {
+  const [count, setCount] = useState<number | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch("/api/analytics/recommendations", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setCount(data.recommendations?.length || 0))
+      .catch(() => setCount(0));
+  }, []);
+
+  // データ取得中 or 0件なら非表示
+  if (count === null || count === 0) return null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -16,10 +31,13 @@ const RecommendationBanner = () => {
         <div className="flex-1">
           <h3 className="text-sm font-semibold mb-0.5">商品切替提案</h3>
           <p className="text-xs text-muted-foreground">
-            <span className="font-num font-semibold text-accent">3件</span>の商品について入替の検討をおすすめします
+            <span className="font-num font-semibold text-accent">{count}件</span>の商品について入替の検討をおすすめします
           </p>
         </div>
-        <button className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors whitespace-nowrap">
+        <button
+          onClick={() => navigate("/analytics/recommendations")}
+          className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors whitespace-nowrap"
+        >
           詳細を見る <ArrowRight className="w-3 h-3" />
         </button>
       </div>
