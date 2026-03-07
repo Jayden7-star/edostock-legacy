@@ -14,7 +14,7 @@ interface Product {
   id: number;
   name: string;
   janCode: string;
-  category: { displayName: string };
+  category: { displayName: string } | null;
   currentStock: number;
   reorderPoint: number;
   optimalStock: number;
@@ -38,6 +38,9 @@ const statusConfig: Record<StockStatus, { label: string; dot: string; bg: string
   sufficient: { label: "十分", dot: "bg-edo-success", bg: "text-edo-success" },
 };
 
+const getCategoryName = (p: Product): string =>
+  p.category?.displayName ?? "未分類";
+
 const Inventory = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +58,15 @@ const Inventory = () => {
   const fetchProducts = useCallback(() => {
     setLoading(true);
     fetch("/api/inventory", { credentials: "include" })
-      .then((r) => r.json())
-      .then(setProducts)
+      .then((r) => {
+        if (r.status === 401) {
+          window.location.href = "/login";
+          return null;
+        }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data) => { if (data) setProducts(data); })
       .catch(() => toast({ title: "エラー", description: "在庫データの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [toast]);
@@ -66,11 +76,11 @@ const Inventory = () => {
   }, [fetchProducts]);
 
   // Build categories dynamically from product data
-  const categories = ["すべて", ...Array.from(new Set(products.map((p) => p.category.displayName)))];
+  const categories = ["すべて", ...Array.from(new Set(products.map(getCategoryName)))];
 
   const filtered = products.filter((p) => {
     const matchSearch = p.name.includes(search) || p.janCode.includes(search);
-    const matchCat = category === "すべて" || p.category.displayName === category;
+    const matchCat = category === "すべて" || getCategoryName(p) === category;
     const status = getStockStatus(p);
     const matchStatus =
       stockFilter === "すべて" ||
@@ -217,7 +227,7 @@ const Inventory = () => {
                     </td>
                     <td className="py-3 px-4 font-medium">{p.name}</td>
                     <td className="py-3 px-4">
-                      <Badge variant="outline" className="text-xs border-border/50">{p.category.displayName}</Badge>
+                      <Badge variant="outline" className="text-xs border-border/50">{getCategoryName(p)}</Badge>
                     </td>
                     <td className={cn("py-3 px-4 text-right font-num font-semibold", cfg.bg)}>{p.currentStock}</td>
                     <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
