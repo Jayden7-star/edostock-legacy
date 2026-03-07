@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { Search, Filter, Package, Plus, Pencil, EyeOff } from "lucide-react";
 
 interface Product {
   id: number;
