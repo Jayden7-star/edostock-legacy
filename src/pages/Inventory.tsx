@@ -39,7 +39,7 @@ const statusConfig: Record<StockStatus, { label: string; dot: string; bg: string
 };
 
 const getCategoryName = (p: Product): string =>
-  p.category?.displayName ?? "未分類";
+  p.category?.displayName || "未分類";
 
 const Inventory = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -76,8 +76,10 @@ const Inventory = () => {
   }, [fetchProducts]);
 
   // Build categories dynamically from product data
-  const categories = ["すべて", ...Array.from(new Set(products.map(getCategoryName)))];
-
+  const categories = [
+  "すべて",
+  ...Array.from(new Set(products.map(getCategoryName))).filter((c) => c !== ""),
+];
   const filtered = products.filter((p) => {
     const matchSearch = p.name.includes(search) || p.janCode.includes(search);
     const matchCat = category === "すべて" || getCategoryName(p) === category;
