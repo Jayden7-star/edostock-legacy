@@ -43,8 +43,16 @@ csvRouter.post("/", async (req, res) => {
                 }
 
                 await prisma.salesRecord.create({
-                    data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
-                });
+    data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
+});
+
+// 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
+if (product.currentStock !== null) {
+    await prisma.product.update({
+        where: { id: product.id },
+        data: { currentStock: { decrement: quantitySold } },
+    });
+}
             }
 
             return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
