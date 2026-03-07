@@ -31,6 +31,12 @@ inventoryRouter.get("/alerts", async (_req, res) => {
     res.json(alerts);
 });
 
+inventoryRouter.patch("/:id/deactivate", async (req, res) => {
+    const id = parseInt(req.params.id);
+    await prisma.product.update({ where: { id }, data: { isActive: false } });
+    res.json({ success: true });
+});
+
 inventoryRouter.get("/", async (req, res) => {
     const status = req.query.status as string | undefined;
     const products = await prisma.product.findMany({
