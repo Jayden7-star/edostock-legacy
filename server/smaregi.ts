@@ -83,7 +83,7 @@ smaregiRouter.post("/test", async (_req, res) => {
         }
 
         // Attempt to get access token from Smaregi API
-        const tokenUrl = `https://id.smaregi.dev/authorize/token`;
+        const tokenUrl = `https://id.smaregi.jp/authorize/token`;
         const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
 
         const tokenResponse = await fetch(tokenUrl, {
@@ -194,7 +194,7 @@ async function getSmaregiToken(config: {
     }
 
     // Request new token via client credentials
-    const tokenUrl = "https://id.smaregi.dev/authorize/token";
+    const tokenUrl = "https://id.smaregi.jp/authorize/token";
     const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
 
     const response = await fetch(tokenUrl, {
@@ -258,7 +258,7 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
         const token = await getSmaregiToken(config);
 
         // 2. Fetch transaction details from Smaregi API
-        const apiBase = `https://api.smaregi.dev/${config.contractId}/pos`;
+        const apiBase = `https://api.smaregi.jp/${config.contractId}/pos`;
         const params = new URLSearchParams({
             "transaction_date_time_from": `${date}T00:00:00+09:00`,
             "transaction_date_time_to": `${date}T23:59:59+09:00`,
