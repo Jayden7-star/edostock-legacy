@@ -179,18 +179,20 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   };
 
   const parseFile = (f: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      Papa.parse(text, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (result) => {
-          const records = result.data as Record<string, string>[];
-          const headers = result.meta.fields || [];
-          const type = detectCsvType(headers);
-          setCsvType(type);
-          setRawRecords(records);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target?.result as string;
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        const records = result.data as Record<string, string>[];
+        const headers = result.meta.fields || [];
+        const type = detectCsvType(headers);
+        setCsvType(type);
+        setRawRecords(records);
+
+        // ← ここを修正
 
           if (type === "PRODUCT_SALES") {
   // 商品コードごとに集計
