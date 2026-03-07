@@ -193,32 +193,37 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
           setRawRecords(records);
 
           if (type === "PRODUCT_SALES") {
-            const rows: ParsedRow[] = records
-              .filter((r) => r["商品コード"]?.trim() && r["商品コード"]?.trim() !== "合計")
-              .map((r) => ({
-                janCode: r["商品コード"]?.trim() || "",
-                category: r["部門名"]?.trim() || "",
-                name: r["商品名"]?.trim() || "",
-                qty: parseInt(r["実販売点数"]) || parseInt(r["販売点数"]) || 0,
-                sales: parseInt(r["純売上"]) || 0,
-                isNew: false,
-                raw: r,
-              }));
-            setParsedRows(rows);
-          } else {
-            const rows: ParsedRow[] = records
-              .filter((r) => r["日付"]?.trim() && r["日付"]?.trim() !== "合計")
-              .map((r) => ({
-                janCode: "",
-                category: "",
-                name: r["日付"]?.trim() || "",
-                qty: parseInt(r["販売点数"]) || 0,
-                sales: parseInt(r["純売上"]) || 0,
-                isNew: false,
-                raw: r,
-              }));
-            setParsedRows(rows);
-          }
+  // 商品コードごとに集計
+  const aggregated: Record<string, { category: string; name: string; qty: number; sales: number; raw: Record<string, string> }> = {};
+  
+  records
+    .filter((r) => r["商品コード"]?.trim() && r["商品コード"]?.trim() !== "合計")
+    .forEach((r) => {
+      const code = r["商品コード"].trim();
+      if (!aggregated[code]) {
+        aggregated[code] = {
+          category: r["部門名"]?.trim() || "",
+          name: r["商品名"]?.trim() || "",
+          qty: 0,
+          sales: 0,
+          raw: r,
+        };
+      }
+      aggregated[code].qty += parseInt(r["数量"]) || 0;
+      aggregated[code].sales += parseInt(r["値引き後計"]) || 0;
+    });
+
+  const rows: ParsedRow[] = Object.entries(aggregated).map(([janCode, v]) => ({
+    janCode,
+    category: v.category,
+    name: v.name,
+    qty: v.qty,
+    sales: v.sales,
+    isNew: false,
+    raw: v.raw,
+  }));
+  setParsedRows(rows);
+}
 
           const period = extractPeriodFromFilename(f.name);
           setPeriodStart(period.start);
@@ -360,7 +365,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
                           <th className="text-left py-3 px-4 font-medium">部門名</th>
                           <th className="text-left py-3 px-4 font-medium">商品名</th>
                           <th className="text-right py-3 px-4 font-medium">販売点数</th>
-                          <th className="text-right py-3 px-4 font-medium">純売上</th>
+                          <th className="text-right py-3 px-4 font-medium">売上金額</th>
                         </>
                       ) : (
                         <>
