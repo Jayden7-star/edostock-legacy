@@ -20,8 +20,8 @@ csvRouter.post("/", async (req, res) => {
                 const janCode = record["商品コード"]?.trim();
                 if (!janCode || janCode === "合計" || janCode === "") continue;
 
-                const quantitySold = parseInt(record["実販売点数"]) || 0;
-                const netSales = parseInt(record["純売上"]) || 0;
+                const quantitySold = parseInt(record["数量"]) || 0;
+                const netSales = parseInt(record["値引き後計"]) || 0;
                 const categoryName = record["部門名"]?.trim() || "";
                 const productName = record["商品名"]?.trim() || "";
 
