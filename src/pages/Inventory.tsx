@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Search, Filter, Package, Plus, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -104,7 +103,21 @@ const Inventory = () => {
     setModalOpen(true);
   };
 
-  const handleSubmit = async () => {
+  const handleDeactivate = async (p: Product) => {
+    if (!confirm(`「${p.name}」を終売にして一覧から非表示にしますか？\n（売上分析データは保持されます）`)) return;
+    try {
+        await fetch(`/api/inventory/${p.id}/deactivate`, {
+            method: "PATCH",
+            credentials: "include",
+        });
+        toast({ title: "終売設定完了", description: `${p.name}を非表示にしました` });
+        fetchProducts();
+    } catch {
+        toast({ title: "エラー", description: "処理に失敗しました", variant: "destructive" });
+    }
+};
+
+const handleSubmit = async () => {
     if (!selectedProduct || !quantity) return;
     setSubmitting(true);
     try {
@@ -240,23 +253,31 @@ const Inventory = () => {
                     <td className="py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
-                          onClick={() => openModal(p, "purchase")}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => openModal(p, "adjust")}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                      </div>
+    <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
+        onClick={() => openModal(p, "purchase")}
+    >
+        <Plus className="w-4 h-4" />
+    </Button>
+    <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+        onClick={() => openModal(p, "adjust")}
+    >
+        <Pencil className="w-4 h-4" />
+    </Button>
+    <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
+        onClick={() => handleDeactivate(p)}
+    >
+        <EyeOff className="w-4 h-4" />
+    </Button>
+</div>
                     </td>
                   </motion.tr>
                 );
