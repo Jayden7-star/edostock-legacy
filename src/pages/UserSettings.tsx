@@ -17,7 +17,12 @@ type User = {
   createdAt: string;
 };
 
-const emptyForm = { name: "", email: "", password: "", role: "STAFF" };
+type SessionUser = {
+  id: number;
+  role: string;
+};
+
+const emptyForm = { name: "", email: "", password: "", currentPassword: "", role: "STAFF" };
 
 const UserSettings = () => {
   const { toast } = useToast();
@@ -27,6 +32,15 @@ const UserSettings = () => {
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+
+  const fetchSession = async () => {
+    try {
+      const res = await fetch("/api/auth/session", { credentials: "include" });
+      const data = await res.json();
+      if (data.authenticated) setSessionUser({ id: data.user.id, role: data.user.role });
+    } catch {}
+  };
 
   const fetchUsers = async () => {
     try {
@@ -41,7 +55,12 @@ const UserSettings = () => {
     }
   };
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => {
+    fetchSession();
+    fetchUsers();
+  }, []);
+
+  const isSelf = (u: User) => sessionUser?.id === u.id;
 
   const openAdd = () => {
     setEditTarget(null);
@@ -51,7 +70,7 @@ const UserSettings = () => {
 
   const openEdit = (u: User) => {
     setEditTarget(u);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role });
+    setForm({ name: u.name, email: u.email, password: "", currentPassword: "", role: u.role });
     setModalOpen(true);
   };
 
@@ -60,12 +79,18 @@ const UserSettings = () => {
       toast({ title: "入力エラー", description: "名前・メール・パスワードを入力してください", variant: "destructive" });
       return;
     }
+    // 自分自身の編集の場合は現行パスワードが必須
+    if (editTarget && isSelf(editTarget) && !form.currentPassword) {
+      toast({ title: "入力エラー", description: "現在のパスワードを入力してください", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
       const url = editTarget ? `/api/auth/users/${editTarget.id}` : "/api/auth/users";
       const method = editTarget ? "PUT" : "POST";
       const body: any = { name: form.name, email: form.email, role: form.role };
       if (form.password) body.password = form.password;
+      if (editTarget && isSelf(editTarget)) body.currentPassword = form.currentPassword;
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -142,7 +167,9 @@ const UserSettings = () => {
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="bg-card border-border/50">
-          <DialogHeader><DialogTitle>{editTarget ? "ユーザーを編集" : "ユーザーを追加"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editTarget ? "ユーザーを編集" : "ユーザーを追加"}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>名前</Label>
@@ -152,8 +179,15 @@ const UserSettings = () => {
               <Label>メールアドレス</Label>
               <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="bg-secondary/50 border-border/50 h-11" />
             </div>
+            {/* 自分自身を編集する場合は現行パスワードを表示 */}
+            {editTarget && isSelf(editTarget) && (
+              <div className="space-y-2">
+                <Label>現在のパスワード <span className="text-destructive">*</span></Label>
+                <Input type="password" value={form.currentPassword} onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))} className="bg-secondary/50 border-border/50 h-11" placeholder="現在のパスワードを入力" />
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>{editTarget ? "パスワード（変更する場合のみ）" : "パスワード"}</Label>
+              <Label>{editTarget ? "新しいパスワード（変更する場合のみ）" : "パスワード"}</Label>
               <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="bg-secondary/50 border-border/50 h-11" />
             </div>
             <div className="space-y-2">
