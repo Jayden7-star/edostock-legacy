@@ -3,6 +3,34 @@ import { prisma } from "./index.js";
 
 export const inventoryRouter = Router();
 
+inventoryRouter.get("/alerts", async (_req, res) => {
+    const products = await prisma.product.findMany({
+        where: { isActive: true, reorderPoint: { gt: 0 } },
+        include: { category: true },
+    });
+    const alerts = products
+        .filter((p) => p.currentStock <= p.reorderPoint)
+        .map((p) => ({
+            id: p.id,
+            name: p.name,
+            category: p.category.displayName,
+            currentStock: p.currentStock,
+            reorderPoint: p.reorderPoint,
+            optimalStock: p.optimalStock,
+            severity:
+                p.currentStock <= 0
+                    ? "critical"
+                    : p.currentStock <= p.reorderPoint * 0.5
+                        ? "critical"
+                        : ("warning" as const),
+        }))
+        .sort((a, b) => {
+            const order: Record<string, number> = { critical: 0, warning: 1 };
+            return (order[a.severity] ?? 1) - (order[b.severity] ?? 1) || a.currentStock - b.currentStock;
+        });
+    res.json(alerts);
+});
+
 inventoryRouter.get("/", async (req, res) => {
     const status = req.query.status as string | undefined;
     const products = await prisma.product.findMany({
@@ -38,30 +66,4 @@ inventoryRouter.post("/", async (req, res) => {
     res.json({ success: true, newStock });
 });
 
-inventoryRouter.get("/alerts", async (_req, res) => {
-    const products = await prisma.product.findMany({
-        where: { isActive: true, reorderPoint: { gt: 0 } },
-        include: { category: true },
-    });
-    const alerts = products
-        .filter((p) => p.currentStock <= p.reorderPoint)
-        .map((p) => ({
-            id: p.id,
-            name: p.name,
-            category: p.category.displayName,
-            currentStock: p.currentStock,
-            reorderPoint: p.reorderPoint,
-            optimalStock: p.optimalStock,
-            severity:
-                p.currentStock <= 0
-                    ? "critical"
-                    : p.currentStock <= p.reorderPoint * 0.5
-                        ? "critical"
-                        : ("warning" as const),
-        }))
-        .sort((a, b) => {
-            const order: Record<string, number> = { critical: 0, warning: 1 };
-            return (order[a.severity] ?? 1) - (order[b.severity] ?? 1) || a.currentStock - b.currentStock;
-        });
-    res.json(alerts);
-});
+
