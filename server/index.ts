@@ -30,6 +30,7 @@ if (process.env.NODE_ENV === "production") {
 const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:3001",
+    "https://edostock.onrender.com",
 ];
 
 if (process.env.NODE_ENV === "production") {
@@ -118,7 +119,7 @@ if (process.env.NODE_ENV === "production") {
 app.listen(PORT, () => {
     console.log(`🚀 EdoStock API サーバー起動: http://localhost:${PORT}`);
 
-    // 日次自動同期: 毎日 AM 3:00 に前日の販売データを同期
+    // 日次自動同期: 毎日 午後 15:00 に前日の販売データを同期
     cron.schedule("0 6 * * *", async () => {
         console.log("[CRON] スマレジ日次同期を開始...");
         try {
