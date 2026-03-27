@@ -5,9 +5,12 @@ export const productsRouter = Router();
 
 productsRouter.get("/", async (req, res) => {
     const search = req.query.search as string | undefined;
+    const department = req.query.department as string | undefined;
+    const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
     const products = await prisma.product.findMany({
         where: {
             isActive: true,
+            ...deptFilter,
             ...(search ? { OR: [{ name: { contains: search } }, { janCode: { contains: search } }] } : {}),
         },
         include: { category: true },

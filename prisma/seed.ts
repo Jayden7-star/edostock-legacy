@@ -6,17 +6,17 @@ const prisma = new PrismaClient();
 async function main() {
     // Create categories
     const categories = [
-        { name: "Tシャツ", displayName: "Tシャツ", isFood: false, displayOrder: 1 },
-        { name: "☆　その他雑貨", displayName: "その他雑貨", isFood: false, displayOrder: 2 },
-        { name: "佃煮　自社製造", displayName: "佃煮 自社製造", isFood: true, displayOrder: 3 },
-        { name: "特売", displayName: "特売", isFood: true, displayOrder: 4 },
-        { name: "佃煮仕入れ商品", displayName: "佃煮 仕入れ", isFood: true, displayOrder: 5 },
-        { name: "佃煮りパック", displayName: "佃煮リパック", isFood: true, displayOrder: 6 },
-        { name: "菓子仕入れ商品", displayName: "菓子 仕入れ", isFood: true, displayOrder: 7 },
-        { name: "煮豆仕入れ商品", displayName: "煮豆 仕入れ", isFood: true, displayOrder: 8 },
-        { name: "☆　その他　仕入れ商品", displayName: "その他 仕入れ", isFood: true, displayOrder: 9 },
-        { name: "混ぜご飯のもと", displayName: "混ぜご飯のもと", isFood: true, displayOrder: 10 },
-        { name: "☆　その他", displayName: "その他", isFood: false, displayOrder: 11 },
+        { name: "Tシャツ", displayName: "Tシャツ", isFood: false, department: "APPAREL", displayOrder: 1 },
+        { name: "☆　その他雑貨", displayName: "その他雑貨", isFood: false, department: "GOODS", displayOrder: 2 },
+        { name: "佃煮　自社製造", displayName: "佃煮 自社製造", isFood: true, department: "FOOD", displayOrder: 3 },
+        { name: "特売", displayName: "特売", isFood: true, department: "FOOD", displayOrder: 4 },
+        { name: "佃煮仕入れ商品", displayName: "佃煮 仕入れ", isFood: true, department: "FOOD", displayOrder: 5 },
+        { name: "佃煮りパック", displayName: "佃煮リパック", isFood: true, department: "FOOD", displayOrder: 6 },
+        { name: "菓子仕入れ商品", displayName: "菓子 仕入れ", isFood: true, department: "FOOD", displayOrder: 7 },
+        { name: "煮豆仕入れ商品", displayName: "煮豆 仕入れ", isFood: true, department: "FOOD", displayOrder: 8 },
+        { name: "☆　その他　仕入れ商品", displayName: "その他 仕入れ", isFood: true, department: "FOOD", displayOrder: 9 },
+        { name: "混ぜご飯のもと", displayName: "混ぜご飯のもと", isFood: true, department: "FOOD", displayOrder: 10 },
+        { name: "☆　その他", displayName: "その他", isFood: false, department: "GOODS", displayOrder: 11 },
     ];
 
     for (const cat of categories) {

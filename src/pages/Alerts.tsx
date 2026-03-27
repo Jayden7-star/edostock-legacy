@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 
 interface AlertItem {
   id: number;
@@ -26,14 +27,17 @@ const Alerts = () => {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
-    fetch("/api/inventory/alerts", { credentials: "include" })
+    const url = department ? `/api/inventory/alerts?department=${department}` : "/api/inventory/alerts";
+    fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then(setAlerts)
       .catch(() => toast({ title: "エラー", description: "アラートの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [department, toast]);
 
   const handleCopy = () => {
     const text = alerts

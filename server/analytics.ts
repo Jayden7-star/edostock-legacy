@@ -4,10 +4,12 @@ import { prisma } from "./index.js";
 export const analyticsRouter = Router();
 
 // GET /api/analytics/dashboard
-analyticsRouter.get("/dashboard", async (_req, res) => {
+analyticsRouter.get("/dashboard", async (req, res) => {
     try {
+        const department = req.query.department as string | undefined;
+        const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
         const allProducts = await prisma.product.findMany({
-            where: { isActive: true },
+            where: { isActive: true, ...deptFilter },
             include: { category: true },
         });
 
@@ -113,6 +115,8 @@ analyticsRouter.get("/dashboard", async (_req, res) => {
 analyticsRouter.get("/abc", async (req, res) => {
     try {
         const period = (req.query.period as string) || "month";
+        const department = req.query.department as string | undefined;
+        const deptFilter = department && department !== "ALL" ? { product: { category: { department } } } : {};
         const periodDays: Record<string, number> = { week: 7, month: 30, quarter: 90, half: 180, year: 365 };
         const days = periodDays[period] || 30;
         const cutoff = new Date();
@@ -120,7 +124,7 @@ analyticsRouter.get("/abc", async (req, res) => {
 
         // Aggregate sales by product
         const salesRecords = await prisma.salesRecord.findMany({
-            where: { periodStart: { gte: cutoff } },
+            where: { periodStart: { gte: cutoff }, ...deptFilter },
             include: { product: { include: { category: true } } },
         });
 
@@ -171,7 +175,8 @@ analyticsRouter.get("/abc", async (req, res) => {
 });
 
 // GET /api/analytics/seasonal
-analyticsRouter.get("/seasonal", async (_req, res) => {
+analyticsRouter.get("/seasonal", async (req, res) => {
+    // department param accepted but not applied: MonthlySales is store-level aggregate with no department breakdown
     try {
         const monthlySales = await prisma.monthlySales.findMany({
             orderBy: { month: "asc" },
@@ -261,14 +266,16 @@ async function calculateSeasonalIndex(): Promise<Map<number, number>> {
 }
 
 // GET /api/analytics/forecast
-analyticsRouter.get("/forecast", async (_req, res) => {
+analyticsRouter.get("/forecast", async (req, res) => {
     try {
+        const department = req.query.department as string | undefined;
+        const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
         const seasonalIndex = await calculateSeasonalIndex();
         const currentMonth = new Date().getMonth() + 1;
         const seasonFactor = seasonalIndex.get(currentMonth) || 1.0;
 
         const products = await prisma.product.findMany({
-            where: { isActive: true },
+            where: { isActive: true, ...deptFilter },
             include: { category: true },
             orderBy: { name: "asc" },
         });
@@ -368,10 +375,12 @@ analyticsRouter.get("/forecast", async (_req, res) => {
 });
 
 // GET /api/analytics/recommendations
-analyticsRouter.get("/recommendations", async (_req, res) => {
+analyticsRouter.get("/recommendations", async (req, res) => {
     try {
+        const department = req.query.department as string | undefined;
+        const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
         const products = await prisma.product.findMany({
-            where: { isActive: true },
+            where: { isActive: true, ...deptFilter },
             include: { category: true },
             orderBy: { name: "asc" },
         });

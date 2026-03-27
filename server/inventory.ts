@@ -3,9 +3,11 @@ import { prisma } from "./index.js";
 
 export const inventoryRouter = Router();
 
-inventoryRouter.get("/alerts", async (_req, res) => {
+inventoryRouter.get("/alerts", async (req, res) => {
+    const department = req.query.department as string | undefined;
+    const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
     const products = await prisma.product.findMany({
-        where: { isActive: true, reorderPoint: { gt: 0 } },
+        where: { isActive: true, reorderPoint: { gt: 0 }, ...deptFilter },
         include: { category: true },
     });
     const alerts = products
@@ -39,8 +41,10 @@ inventoryRouter.patch("/:id/deactivate", async (req, res) => {
 
 inventoryRouter.get("/", async (req, res) => {
     const status = req.query.status as string | undefined;
+    const department = req.query.department as string | undefined;
+    const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
     const products = await prisma.product.findMany({
-        where: { isActive: true },
+        where: { isActive: true, ...deptFilter },
         include: { category: true },
         orderBy: { name: "asc" },
     });
@@ -71,5 +75,3 @@ inventoryRouter.post("/", async (req, res) => {
 
     res.json({ success: true, newStock });
 });
-
-

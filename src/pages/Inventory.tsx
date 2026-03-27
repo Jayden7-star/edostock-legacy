@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
+import { Search, Filter, Package, Plus, Pencil, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Search, Filter, Package, Plus, Pencil, EyeOff } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 interface Product {
   id: number;
@@ -54,10 +55,13 @@ const Inventory = () => {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   const fetchProducts = useCallback(() => {
     setLoading(true);
-    fetch("/api/inventory", { credentials: "include" })
+    const url = department ? `/api/inventory?department=${department}` : "/api/inventory";
+    fetch(url, { credentials: "include" })
       .then((r) => {
         if (r.status === 401) {
           window.location.href = "/login";
@@ -69,7 +73,7 @@ const Inventory = () => {
       .then((data) => { if (data) setProducts(data); })
       .catch(() => toast({ title: "エラー", description: "在庫データの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [department, toast]);
 
   useEffect(() => {
     fetchProducts();
@@ -77,9 +81,10 @@ const Inventory = () => {
 
   // Build categories dynamically from product data
   const categories = [
-  "すべて",
-  ...Array.from(new Set(products.map(getCategoryName))).filter((c) => c !== ""),
-];
+    "すべて",
+    ...Array.from(new Set(products.map(getCategoryName))).filter((c) => c !== ""),
+  ];
+
   const filtered = products.filter((p) => {
     const matchSearch = p.name.includes(search) || p.janCode.includes(search);
     const matchCat = category === "すべて" || getCategoryName(p) === category;
@@ -105,19 +110,22 @@ const Inventory = () => {
 
   const handleDeactivate = async (p: Product) => {
     if (!confirm(`「${p.name}」を終売にして一覧から非表示にしますか？\n（売上分析データは保持されます）`)) return;
+    const savedScrollY = window.scrollY;
     try {
-        await fetch(`/api/inventory/${p.id}/deactivate`, {
-            method: "PATCH",
-            credentials: "include",
-        });
-        toast({ title: "終売設定完了", description: `${p.name}を非表示にしました` });
-        fetchProducts();
+      await fetch(`/api/inventory/${p.id}/deactivate`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      setProducts((prev) => prev.filter((item) => item.id !== p.id));
+      toast({ title: "終売設定完了", description: `${p.name}を非表示にしました` });
     } catch {
-        toast({ title: "エラー", description: "処理に失敗しました", variant: "destructive" });
+      toast({ title: "エラー", description: "処理に失敗しました", variant: "destructive" });
+    } finally {
+      requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
     }
-};
+  };
 
-const handleSubmit = async () => {
+  const handleSubmit = async () => {
     if (!selectedProduct || !quantity) return;
     setSubmitting(true);
     try {
@@ -253,31 +261,32 @@ const handleSubmit = async () => {
                     <td className="py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
-    <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
-        onClick={() => openModal(p, "purchase")}
-    >
-        <Plus className="w-4 h-4" />
-    </Button>
-    <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-        onClick={() => openModal(p, "adjust")}
-    >
-        <Pencil className="w-4 h-4" />
-    </Button>
-    <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
-        onClick={() => handleDeactivate(p)}
-    >
-        <EyeOff className="w-4 h-4" />
-    </Button>
-</div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
+                          onClick={() => openModal(p, "purchase")}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openModal(p, "adjust")}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
+                          onClick={() => handleDeactivate(p)}
+                          title="非表示"
+                        >
+                          <EyeOff className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </motion.tr>
                 );

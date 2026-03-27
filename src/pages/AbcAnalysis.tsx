@@ -9,6 +9,7 @@ import {
 import { FileDown, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 
 interface AbcProduct {
   id: number;
@@ -50,15 +51,19 @@ const AbcAnalysis = () => {
   const [data, setData] = useState<AbcData | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/analytics/abc?period=${period}`, { credentials: "include" })
+    const params = new URLSearchParams({ period });
+    if (department) params.set("department", department);
+    fetch(`/api/analytics/abc?${params}`, { credentials: "include" })
       .then((r) => r.json())
       .then(setData)
       .catch(() => toast({ title: "エラー", description: "ABC分析データの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [period, toast]);
+  }, [period, department, toast]);
 
   if (loading) {
     return (

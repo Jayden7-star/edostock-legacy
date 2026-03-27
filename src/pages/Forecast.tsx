@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { useSearchParams } from "react-router-dom";
 
 interface ForecastItem {
   id: number;
@@ -48,14 +49,17 @@ const Forecast = () => {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState("all");
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
-    fetch("/api/analytics/forecast", { credentials: "include" })
+    const url = department ? `/api/analytics/forecast?department=${department}` : "/api/analytics/forecast";
+    fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then(setData)
       .catch(() => toast({ title: "エラー", description: "需要予測データの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [department, toast]);
 
   if (loading) {
     return (

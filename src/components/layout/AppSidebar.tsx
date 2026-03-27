@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Link, useLocation } from "react-router-dom";
+import { NavLink, Link, useLocation, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -62,7 +62,11 @@ interface AppSidebarProps {
 
 const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["分析", "設定"]);
+
+  const dept = searchParams.get("department");
+  const toWithDept = (path: string) => dept ? `${path}?department=${dept}` : path;
 
   const toggleGroup = (label: string) => {
     setExpandedGroups((prev) =>
@@ -153,7 +157,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
                       {item.children.map((child) => (
                         <NavLink
                           key={child.path}
-                          to={child.path}
+                          to={toWithDept(child.path)}
                           className={cn(
                             "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all",
                             isActive(child.path)
@@ -175,7 +179,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
           return (
             <NavLink
               key={item.path}
-              to={item.path!}
+              to={toWithDept(item.path!)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
                 isActive(item.path)

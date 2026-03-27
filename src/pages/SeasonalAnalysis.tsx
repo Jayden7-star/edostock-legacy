@@ -6,6 +6,7 @@ import {
 import { FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 
 interface MonthlyTrendItem {
   month: string;
@@ -52,14 +53,17 @@ const SeasonalAnalysis = () => {
   const [data, setData] = useState<SeasonalData | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
-    fetch("/api/analytics/seasonal", { credentials: "include" })
+    const url = department ? `/api/analytics/seasonal?department=${department}` : "/api/analytics/seasonal";
+    fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then(setData)
       .catch(() => toast({ title: "エラー", description: "季節性分析データの取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [department, toast]);
 
   if (loading) {
     return (

@@ -7,6 +7,7 @@ import SalesChart from "@/components/dashboard/SalesChart";
 import AlertList from "@/components/dashboard/AlertList";
 import RecommendationBanner from "@/components/dashboard/RecommendationBanner";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 
 interface DashboardData {
   alertCount: number;
@@ -26,13 +27,16 @@ interface DashboardData {
 const Index = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
-    fetch("/api/analytics/dashboard", { credentials: "include" })
+    const url = department ? `/api/analytics/dashboard?department=${department}` : "/api/analytics/dashboard";
+    fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then(setData)
       .catch(() => toast({ title: "エラー", description: "ダッシュボードデータの取得に失敗しました", variant: "destructive" }));
-  }, [toast]);
+  }, [department, toast]);
 
   const d = data || {
     alertCount: 0, totalStock: 0, totalProducts: 0,

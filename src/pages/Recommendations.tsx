@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { TrendingDown, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 
 interface Recommendation {
   id: number;
@@ -47,14 +48,17 @@ const Recommendations = () => {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const department = searchParams.get("department") || "";
 
   useEffect(() => {
-    fetch("/api/analytics/recommendations", { credentials: "include" })
+    const url = department ? `/api/analytics/recommendations?department=${department}` : "/api/analytics/recommendations";
+    fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setRecs(data.recommendations || []))
       .catch(() => toast({ title: "エラー", description: "商品切替提案の取得に失敗しました", variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [department, toast]);
 
   if (loading) {
     return (
