@@ -139,6 +139,8 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [dupWarning, setDupWarning] = useState<HistoryItem | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   useEffect(() => {
     fetch("/api/csv/history", { credentials: "include" })
@@ -255,6 +257,38 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
     }
   };
 
+  // === 二重インポート防止 ===
+  const checkDupThenParse = async (f: File) => {
+    try {
+      const res = await fetch("/api/csv/history", { credentials: "include" });
+      const hist: HistoryItem[] = await res.json();
+      const found = hist.find((h) => h.filename === f.name);
+      if (found) {
+        setFile(f);
+        setPendingFile(f);
+        setDupWarning(found);
+      } else {
+        parseFile(f);
+      }
+    } catch {
+      parseFile(f);
+    }
+  };
+
+  const handleDropWithDupCheck = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    if (f?.name.endsWith(".csv")) {
+      checkDupThenParse(f);
+    }
+  };
+
+  const handleFileSelectWithDupCheck = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) checkDupThenParse(f);
+  };
+
   const handleImport = async () => {
     setImporting(true);
     try {
@@ -311,7 +345,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
+              onDrop={handleDropWithDupCheck}
               className={cn(
                 "glass-card border-2 border-dashed p-16 text-center transition-all cursor-pointer",
                 dragOver ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/30"
@@ -322,8 +356,30 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
               <p className="text-lg font-medium mb-2">CSVファイルをドラッグ＆ドロップ</p>
               <p className="text-sm text-muted-foreground mb-4">またはクリックしてファイルを選択</p>
               <p className="text-xs text-muted-foreground">対応形式: スマレジ 商品別売上CSV / 月別売上CSV</p>
-              <input id="csv-input" type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
+              <input id="csv-input" type="file" accept=".csv" className="hidden" onChange={handleFileSelectWithDupCheck} />
             </div>
+            {dupWarning && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-4 glass-card p-4 border border-amber-400/30 bg-amber-400/5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-400">⚠️ このファイルは過去にインポート済みです</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      インポート日時: {new Date(dupWarning.importedAt).toLocaleString("ja-JP")}
+                      {dupWarning.user && ` / ユーザー: ${dupWarning.user.name}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-3">
+                  <Button variant="outline" size="sm" onClick={() => { setDupWarning(null); setPendingFile(null); setFile(null); }}>
+                    キャンセル
+                  </Button>
+                  <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={() => { const f = pendingFile; setDupWarning(null); setPendingFile(null); if (f) parseFile(f); }}>
+                    続けてインポート
+                  </Button>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
 
@@ -497,6 +553,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
 
   // Track which unmatched rows should be auto-registered (default: all ON)
   const [autoRegisterSet, setAutoRegisterSet] = useState<Set<number>>(new Set());
+  const [dupWarning, setDupWarning] = useState<HistoryItem | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const currentSupplier = suppliers.find((s) => s.value === supplier)!;
 
@@ -636,6 +694,31 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
     }
   };
 
+  // === 二重インポート防止 ===
+  const checkDupThenHandle = async (f: File) => {
+    if (!validateFileExt(f)) return;
+    try {
+      const res = await fetch("/api/csv/history", { credentials: "include" });
+      const hist: HistoryItem[] = await res.json();
+      const found = hist.find((h) => h.filename === f.name);
+      if (found) {
+        setPendingFile(f);
+        setDupWarning(found);
+      } else {
+        handleFile(f);
+      }
+    } catch {
+      handleFile(f);
+    }
+  };
+
+  const handleDropWithDupCheck = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    if (f) checkDupThenHandle(f);
+  };
+
   const handleConfirm = async () => {
     setConfirming(true);
     try {
@@ -758,7 +841,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
+              onDrop={handleDropWithDupCheck}
               className={cn(
                 "glass-card border-2 border-dashed p-16 text-center transition-all cursor-pointer",
                 dragOver ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/30",
@@ -786,9 +869,31 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                 type="file"
                 accept={currentSupplier.accept}
                 className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) checkDupThenHandle(f); }}
               />
             </div>
+            {dupWarning && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-4 glass-card p-4 border border-amber-400/30 bg-amber-400/5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-400">⚠️ このファイルは過去にインポート済みです</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      インポート日時: {new Date(dupWarning.importedAt).toLocaleString("ja-JP")}
+                      {dupWarning.user && ` / ユーザー: ${dupWarning.user.name}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-3">
+                  <Button variant="outline" size="sm" onClick={() => { setDupWarning(null); setPendingFile(null); }}>
+                    キャンセル
+                  </Button>
+                  <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={() => { const f = pendingFile; setDupWarning(null); setPendingFile(null); if (f) handleFile(f); }}>
+                    続けてインポート
+                  </Button>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
 
