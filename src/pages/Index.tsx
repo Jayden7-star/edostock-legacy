@@ -6,6 +6,8 @@ import KpiCard from "@/components/dashboard/KpiCard";
 import SalesChart from "@/components/dashboard/SalesChart";
 import AlertList from "@/components/dashboard/AlertList";
 import RecommendationBanner from "@/components/dashboard/RecommendationBanner";
+import AbcSummary from "@/components/dashboard/AbcSummary";
+import SeasonalSummary from "@/components/dashboard/SeasonalSummary";
 import { useToast } from "@/hooks/use-toast";
 import { useSearchParams } from "react-router-dom";
 
@@ -97,6 +99,12 @@ const Index = () => {
           <SalesChart data={d.salesTrend} />
         </div>
         <AlertList alerts={d.alertProducts} />
+      </div>
+
+      {/* ABC分析・季節トレンドサマリー */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-5">
+        <AbcSummary department={department} />
+        <SeasonalSummary department={department} />
       </div>
 
       {/* 季節予測バナー */}
