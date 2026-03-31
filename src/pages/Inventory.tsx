@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Search, Filter, Package, Plus, Pencil, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,8 @@ const Inventory = () => {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const scrollYRef = useRef(0);
+  const shouldRestoreScrollRef = useRef(false);
   const [searchParams] = useSearchParams();
   const department = searchParams.get("department") || "";
 
@@ -78,6 +80,13 @@ const Inventory = () => {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  useEffect(() => {
+    if (shouldRestoreScrollRef.current) {
+      window.scrollTo(0, scrollYRef.current);
+      shouldRestoreScrollRef.current = false;
+    }
+  }, [products]);
 
   // Build categories dynamically from product data
   const categories = [
@@ -147,6 +156,8 @@ const Inventory = () => {
           description: `${selectedProduct.name}: 在庫 → ${data.newStock}`,
         });
         setModalOpen(false);
+        scrollYRef.current = window.scrollY;
+        shouldRestoreScrollRef.current = true;
         fetchProducts();
       } else {
         toast({ title: "エラー", description: data.error, variant: "destructive" });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Search, Plus, Pencil, Trash2, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,8 @@ const ProductSettings = () => {
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const scrollYRef = useRef(0);
+  const shouldRestoreScrollRef = useRef(false);
 
   const fetchProducts = useCallback(() => {
     setLoading(true);
@@ -70,6 +72,13 @@ const ProductSettings = () => {
       .then(setCategories)
       .catch(() => { });
   }, [fetchProducts]);
+
+  useEffect(() => {
+    if (shouldRestoreScrollRef.current) {
+      window.scrollTo(0, scrollYRef.current);
+      shouldRestoreScrollRef.current = false;
+    }
+  }, [products]);
 
   const filtered = products.filter(
     (p) => p.name.includes(search) || p.janCode.includes(search)
@@ -117,6 +126,8 @@ const ProductSettings = () => {
       if (res.ok) {
         toast({ title: editingId ? "更新完了" : "登録完了", description: `${form.name} を${editingId ? "更新" : "登録"}しました` });
         setModalOpen(false);
+        scrollYRef.current = window.scrollY;
+        shouldRestoreScrollRef.current = true;
         fetchProducts();
       } else {
         toast({ title: "エラー", description: data.error, variant: "destructive" });
@@ -134,6 +145,8 @@ const ProductSettings = () => {
       const res = await fetch(`/api/products/${p.id}`, { method: "DELETE", credentials: "include" });
       if (res.ok) {
         toast({ title: "削除完了", description: `${p.name} を削除しました` });
+        scrollYRef.current = window.scrollY;
+        shouldRestoreScrollRef.current = true;
         fetchProducts();
       } else {
         const data = await res.json();
