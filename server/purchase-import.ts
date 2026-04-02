@@ -614,11 +614,30 @@ purchaseImportRouter.post("/jannu/parse", upload.single("file"), async (req: any
             });
         }
 
-        // マッチング処理
+        // マッチング処理（SupplierProductMapping → matchProductByNameColorSize の順で参照）
         const items = [];
         for (let i = 0; i < skus.length; i++) {
             const sku = skus[i];
-            const product = await matchProductByNameColorSize(sku.design, sku.color, sku.size);
+            const supplierProductName = [sku.design, sku.color, sku.size].filter(Boolean).join(" ");
+
+            // 1) 保存済みマッピングを優先参照
+            const savedMapping = await prisma.supplierProductMapping.findUnique({
+                where: {
+                    supplierName_supplierProductName: {
+                        supplierName: "JANNU",
+                        supplierProductName,
+                    },
+                },
+                include: {
+                    product: { select: { id: true, name: true, currentStock: true } },
+                },
+            });
+
+            // 2) マッピングがなければ既存のファジーマッチ
+            const product = savedMapping
+                ? savedMapping.product
+                : await matchProductByNameColorSize(sku.design, sku.color, sku.size);
+
             items.push({
                 row: i + 1,
                 design: sku.design,
@@ -626,6 +645,7 @@ purchaseImportRouter.post("/jannu/parse", upload.single("file"), async (req: any
                 color: sku.color,
                 size: sku.size,
                 quantity: sku.quantity,
+                supplierProductName,
                 matched: !!product,
                 matchedProductId: product?.id || null,
                 matchedProductName: product?.name || null,
@@ -643,7 +663,7 @@ purchaseImportRouter.post("/jannu/parse", upload.single("file"), async (req: any
 // --- Jannu Confirm endpoint ---
 purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
     const userId = (req.session as any).userId;
-    const { items, filename } = req.body;
+    const { items, filename, mappings } = req.body;
     if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: "確定データがありません" });
     }
@@ -723,6 +743,27 @@ purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
             });
 
             processed++;
+        }
+
+        // SupplierProductMapping を upsert 保存（次回以降の自動マッチングに使用）
+        if (Array.isArray(mappings)) {
+            for (const m of mappings) {
+                if (!m.supplierProductName || !m.productId) continue;
+                await prisma.supplierProductMapping.upsert({
+                    where: {
+                        supplierName_supplierProductName: {
+                            supplierName: "JANNU",
+                            supplierProductName: m.supplierProductName,
+                        },
+                    },
+                    update: { productId: m.productId },
+                    create: {
+                        supplierName: "JANNU",
+                        supplierProductName: m.supplierProductName,
+                        productId: m.productId,
+                    },
+                });
+            }
         }
 
         res.json({ success: true, processed, skipped, newlyRegistered });

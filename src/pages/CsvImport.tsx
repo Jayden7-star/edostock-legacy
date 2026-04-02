@@ -83,6 +83,7 @@ interface JannuItem {
   color: string;
   size: string;
   quantity: number;
+  supplierProductName: string;
   matched: boolean;
   matchedProductId: number | null;
   matchedProductName: string | null;
@@ -556,6 +557,11 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
   const [dupWarning, setDupWarning] = useState<HistoryItem | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  // ジャヌツー: ユーザーが手動で選択した商品マッピング (row → productId)
+  const [jannuProductSelections, setJannuProductSelections] = useState<Map<number, number>>(new Map());
+  // 商品マスタ一覧（ドロップダウン用）
+  const [allProducts, setAllProducts] = useState<{ id: number; name: string }[]>([]);
+
   const currentSupplier = suppliers.find((s) => s.value === supplier)!;
 
   const validateFileExt = (f: File): boolean => {
@@ -671,6 +677,11 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
             totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
             totalCost: 0,
           });
+          // 商品マスタをフェッチ（ドロップダウン用）
+          fetch("/api/products", { credentials: "include" })
+            .then((r) => r.json())
+            .then((d) => { setAllProducts(Array.isArray(d) ? d : []); })
+            .catch(() => {});
           setStep(1);
         } else {
           toast({ title: "Excel解析エラー", description: data.error || "解析に失敗しました", variant: "destructive" });
@@ -742,15 +753,28 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
           toast({ title: "エラー", description: data.error, variant: "destructive" });
         }
       } else if (supplier === "jannu") {
-        const itemsWithAutoRegister = jannuItems.map((item) => ({
-          ...item,
-          autoRegister: !item.matched && autoRegisterSet.has(item.row),
-        }));
+        // ユーザーが手動選択した商品を items に反映し、mappings 配列を構築
+        const mappings = Array.from(jannuProductSelections.entries())
+          .map(([row, productId]) => {
+            const item = jannuItems.find((i) => i.row === row);
+            if (!item) return null;
+            return { supplierProductName: item.supplierProductName, productId };
+          })
+          .filter(Boolean);
+
+        const itemsWithAutoRegister = jannuItems.map((item) => {
+          const selectedProductId = jannuProductSelections.get(item.row);
+          return {
+            ...item,
+            matchedProductId: item.matchedProductId || selectedProductId || null,
+            autoRegister: !item.matched && !selectedProductId && autoRegisterSet.has(item.row),
+          };
+        });
         const res = await fetch("/api/purchase-import/jannu/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ items: itemsWithAutoRegister, filename: file?.name || "jannu_import.xlsx" }),
+          body: JSON.stringify({ items: itemsWithAutoRegister, filename: file?.name || "jannu_import.xlsx", mappings }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -796,6 +820,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
     setSummary(null);
     setConfirmResult(null);
     setAutoRegisterSet(new Set());
+    setJannuProductSelections(new Map());
+    setAllProducts([]);
   };
 
   return (
@@ -991,10 +1017,33 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                             <td className="py-3 px-3">
                               {item.matchedProductName ? (
                                 <span className="text-xs text-edo-success">{item.matchedProductName}</span>
-                              ) : isAutoReg ? (
-                                <span className="text-xs text-edo-info font-medium">新規登録予定</span>
                               ) : (
-                                <span className="text-xs text-muted-foreground italic">スキップ</span>
+                                <div className="space-y-1">
+                                  <Select
+                                    value={jannuProductSelections.get(item.row)?.toString() ?? ""}
+                                    onValueChange={(val) => {
+                                      const s = new Map(jannuProductSelections);
+                                      if (val) s.set(item.row, parseInt(val));
+                                      else s.delete(item.row);
+                                      setJannuProductSelections(s);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
+                                      <SelectValue placeholder="どの商品に対応しますか？" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {allProducts.map((p) => (
+                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {!jannuProductSelections.has(item.row) && isAutoReg && (
+                                    <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
+                                  )}
+                                  {!jannuProductSelections.has(item.row) && !isAutoReg && (
+                                    <span className="text-[10px] text-muted-foreground italic">スキップ</span>
+                                  )}
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1091,18 +1140,28 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
               <Button variant="outline" onClick={reset}>
                 <ArrowLeft className="w-4 h-4 mr-2" /> 戻る
               </Button>
-              <Button
-                className="bg-primary hover:bg-primary/90"
-                onClick={handleConfirm}
-                disabled={confirming || (summary.matched === 0 && autoRegisterSet.size === 0)}
-              >
-                {confirming ? (
-                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full mr-2" />
-                ) : null}
-                {confirming ? "入庫中..." : `${summary.matched + autoRegisterSet.size}品目を入庫確定`}
-                {!confirming && <ArrowRight className="w-4 h-4 ml-2" />}
-              </Button>
+              {(() => {
+                // ジャヌツーはドロップダウン選択分も含めた実効カウントを算出
+                const confirmCount = supplier === "jannu"
+                  ? summary.matched
+                    + jannuProductSelections.size
+                    + Array.from(autoRegisterSet).filter((r) => !jannuProductSelections.has(r)).length
+                  : summary.matched + autoRegisterSet.size;
+                return (
+                  <Button
+                    className="bg-primary hover:bg-primary/90"
+                    onClick={handleConfirm}
+                    disabled={confirming || confirmCount === 0}
+                  >
+                    {confirming ? (
+                      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                        className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full mr-2" />
+                    ) : null}
+                    {confirming ? "入庫中..." : `${confirmCount}品目を入庫確定`}
+                    {!confirming && <ArrowRight className="w-4 h-4 ml-2" />}
+                  </Button>
+                );
+              })()}
             </div>
           </motion.div>
         )}

@@ -52,10 +52,11 @@ model Product {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  category        Category              @relation(fields: [categoryId], references: [id])
-  transactions    InventoryTransaction[]
-  salesRecords    SalesRecord[]
-  inventoryCounts InventoryCount[]
+  category         Category              @relation(fields: [categoryId], references: [id])
+  transactions     InventoryTransaction[]
+  salesRecords     SalesRecord[]
+  inventoryCounts  InventoryCount[]
+  supplierMappings SupplierProductMapping[]
   @@map("products")
 }
 
@@ -188,6 +189,18 @@ model SmaregiConfig {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   @@map("smaregi_configs")
+}
+
+model SupplierProductMapping {
+  id                  Int      @id @default(autoincrement())
+  supplierName        String   @map("supplier_name")
+  supplierProductName String   @map("supplier_product_name")
+  productId           Int      @map("product_id")
+  product             Product  @relation(fields: [productId], references: [id])
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([supplierName, supplierProductName])
+  @@map("supplier_product_mappings")
 }
 
 model SmaregiSyncLog {
