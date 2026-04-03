@@ -106,6 +106,43 @@ if (product.currentStock !== null) {
     }
 });
 
+csvRouter.post("/preview", async (req, res) => {
+    try {
+        const { records } = req.body;
+
+        // JANコードごとに集計
+        const aggregated: Record<string, { productName: string; soldQty: number }> = {};
+        for (const record of records) {
+            const janCode = record["商品コード"]?.trim();
+            if (!janCode || janCode === "合計" || janCode === "") continue;
+            const soldQty = parseInt(record["数量"]) || 0;
+            const productName = record["商品名"]?.trim() || "";
+            if (!aggregated[janCode]) {
+                aggregated[janCode] = { productName, soldQty: 0 };
+            }
+            aggregated[janCode].soldQty += soldQty;
+        }
+
+        const matched: { productName: string; currentStock: number | null; soldQty: number; afterStock: number | null }[] = [];
+        const unmatched: { janCode: string; productName: string; soldQty: number }[] = [];
+
+        for (const [janCode, { productName, soldQty }] of Object.entries(aggregated)) {
+            const product = await prisma.product.findUnique({ where: { janCode } });
+            if (product) {
+                const afterStock = product.currentStock !== null ? product.currentStock - soldQty : null;
+                matched.push({ productName: product.name, currentStock: product.currentStock, soldQty, afterStock });
+            } else {
+                unmatched.push({ janCode, productName, soldQty });
+            }
+        }
+
+        res.json({ matched, unmatched });
+    } catch (error) {
+        console.error("CSV preview error:", error);
+        res.status(500).json({ error: "プレビューに失敗しました" });
+    }
+});
+
 csvRouter.get("/history", async (_req, res) => {
     const history = await prisma.csvImport.findMany({
         orderBy: { importedAt: "desc" },

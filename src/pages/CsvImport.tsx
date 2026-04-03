@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import Papa from "papaparse";
 
-const steps = ["アップロード", "プレビュー", "完了"];
+const steps = ["アップロード", "在庫プレビュー", "確認・確定", "完了"];
 
 interface ParsedRow {
   janCode: string;
@@ -36,6 +36,24 @@ interface HistoryItem {
 interface ImportResult {
   recordCount: number;
   newCount: number;
+}
+
+interface StockPreviewMatched {
+  productName: string;
+  currentStock: number | null;
+  soldQty: number;
+  afterStock: number | null;
+}
+
+interface StockPreviewUnmatched {
+  janCode: string;
+  productName: string;
+  soldQty: number;
+}
+
+interface StockPreviewData {
+  matched: StockPreviewMatched[];
+  unmatched: StockPreviewUnmatched[];
 }
 
 // === 仕入インポート用 ===
@@ -142,6 +160,23 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [dupWarning, setDupWarning] = useState<HistoryItem | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [previewData, setPreviewData] = useState<StockPreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (step !== 1 || rawRecords.length === 0) return;
+    setPreviewLoading(true);
+    fetch("/api/csv/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ records: rawRecords }),
+    })
+      .then((r) => r.json())
+      .then((data) => setPreviewData(data))
+      .catch(() => {})
+      .finally(() => setPreviewLoading(false));
+  }, [step]);
 
   useEffect(() => {
     fetch("/api/csv/history", { credentials: "include" })
@@ -308,7 +343,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
       const data = await res.json();
       if (res.ok) {
         setImportResult({ recordCount: data.recordCount, newCount: 0 });
-        setStep(2);
+        setStep(3);
         toast({ title: "インポート完了", description: `${data.recordCount}件のデータを取り込みました` });
       } else {
         toast({ title: "エラー", description: data.error || "インポートに失敗しました", variant: "destructive" });
@@ -385,6 +420,93 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
         )}
 
         {step === 1 && (
+          <motion.div key="stock-preview" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+            <div className="glass-card p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                <h3 className="text-base font-semibold">在庫変動プレビュー</h3>
+              </div>
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full" />
+                  在庫情報を取得中...
+                </div>
+              ) : previewData ? (
+                <div className="space-y-4">
+                  {previewData.unmatched.length > 0 && (
+                    <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg p-4">
+                      <div className="flex items-start gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-sm font-semibold text-amber-400">未マッチ商品 {previewData.unmatched.length}件（インポートは実行されますが、在庫は変動しません）</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs mt-2">
+                          <thead>
+                            <tr className="border-b border-border/30 text-muted-foreground">
+                              <th className="text-left py-1.5 px-3 font-medium">JANコード</th>
+                              <th className="text-left py-1.5 px-3 font-medium">商品名</th>
+                              <th className="text-right py-1.5 px-3 font-medium">売上数</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {previewData.unmatched.map((u, i) => (
+                              <tr key={i} className="border-b border-border/20">
+                                <td className="py-1.5 px-3 font-num text-muted-foreground">{u.janCode}</td>
+                                <td className="py-1.5 px-3">{u.productName}</td>
+                                <td className="py-1.5 px-3 text-right font-num">{u.soldQty}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/50 text-muted-foreground">
+                          <th className="text-left py-3 px-4 font-medium">商品名</th>
+                          <th className="text-right py-3 px-4 font-medium">現在庫</th>
+                          <th className="text-right py-3 px-4 font-medium">売上数</th>
+                          <th className="text-right py-3 px-4 font-medium">インポート後</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewData.matched.map((m, i) => (
+                          <tr key={i} className="border-b border-border/30 transition-colors">
+                            <td className="py-3 px-4 font-medium">{m.productName}</td>
+                            <td className="py-3 px-4 text-right font-num">{m.currentStock ?? "—"}</td>
+                            <td className="py-3 px-4 text-right font-num">{m.soldQty}</td>
+                            <td className={`py-3 px-4 text-right font-num font-semibold ${m.afterStock !== null && m.afterStock < 0 ? "text-red-500" : ""}`}>
+                              {m.currentStock !== null && m.afterStock !== null
+                                ? `${m.currentStock} → ${m.afterStock}${m.afterStock < 0 ? " ⚠️" : ""}`
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {previewData.matched.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-6">マッチした商品がありません</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-6">プレビューデータを取得できませんでした</p>
+              )}
+            </div>
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={() => { setStep(0); setFile(null); setParsedRows([]); setPreviewData(null); }}>
+                <ArrowLeft className="w-4 h-4 mr-2" /> キャンセル
+              </Button>
+              <Button className="bg-primary hover:bg-primary/90" onClick={() => setStep(2)} disabled={previewLoading}>
+                確定してインポート <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 2 && (
           <motion.div key="preview" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
             <div className="glass-card p-5">
               <div className="flex items-center justify-between mb-4">
@@ -477,7 +599,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
           </motion.div>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <motion.div key="complete" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-card p-10 text-center">
             <div className="w-16 h-16 rounded-full bg-edo-success/15 flex items-center justify-center mx-auto mb-5">
               <CheckCircle className="w-8 h-8 text-edo-success" />
