@@ -295,12 +295,12 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
 
   // === 二重インポート防止 ===
   const checkDupThenParse = async (f: File) => {
+    setFile(f);
     try {
       const res = await fetch("/api/csv/history", { credentials: "include" });
       const hist: HistoryItem[] = await res.json();
       const found = hist.find((h) => h.filename === f.name);
       if (found) {
-        setFile(f);
         setPendingFile(f);
         setDupWarning(found);
       } else {
