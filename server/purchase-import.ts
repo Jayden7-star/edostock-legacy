@@ -329,10 +329,23 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
         const items = [];
         for (let i = 0; i < parsed.length; i++) {
             const p = parsed[i];
-            const product = await prisma.product.findUnique({
+            // 1. JANコードで検索
+            let product = await prisma.product.findUnique({
                 where: { janCode: p.janCode },
                 select: { id: true, name: true, janCode: true, currentStock: true },
             });
+            // 2. JANコード未ヒット → 品番でフォールバック検索
+            if (!product && p.hinban) {
+                product = await prisma.product.findFirst({
+                    where: {
+                        OR: [
+                            { janCode: { contains: p.hinban } },
+                            { name: { contains: p.hinban } },
+                        ],
+                    },
+                    select: { id: true, name: true, janCode: true, currentStock: true },
+                });
+            }
             items.push({
                 row: i + 1,
                 hinban: p.hinban,
