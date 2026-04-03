@@ -219,7 +219,8 @@ function parseCorecLines(pageTexts: string[]) {
 
     // Regex pattern for COREC order lines
     // "233563   たらこ   4970974- 101026   70g 築地   10   ¥232   20   対 象   ¥4,640"
-    const lineRegex = /(\d{6})\s+([\u3000-\u9FFF\uF900-\uFAFF\w（）\s]+?)\s+(4970974[\s\-‐‑‒–—―ー－]*[\d\s]+?)\s+(.+?)\s+(\d+)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
+    // JANコードが改行をまたぐ場合に対応: "4970974‐10\n0661" → \d+(?:\n\d+)? でキャプチャ
+    const lineRegex = /(\d{6})\s+([\u3000-\u9FFF\uF900-\uFAFF\w（）\s]+?)\s+(4970974[\s\-‐‑‒–—―ー－]*\d+(?:\n\d+)?)\s+(.+?)\s+(\d+)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
 
     let match;
     while ((match = lineRegex.exec(fullText)) !== null) {
