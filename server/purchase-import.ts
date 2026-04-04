@@ -287,6 +287,32 @@ function parseCorecLines(pageTexts: string[]) {
         }
     }
 
+    // Fallback 2: 発注書フォーマット（JANコードなし）
+    // パターン: 品番(6桁) + 商品名 + ¥単価 + 数量 + 対象 + ¥金額
+    if (results.length === 0) {
+        const orderRegex = /(\d{6})\s+(.+?)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
+        let orderMatch;
+        while ((orderMatch = orderRegex.exec(fullText)) !== null) {
+            const hinban = orderMatch[1];
+            const productName = orderMatch[2].replace(/\s{2,}/g, " ").trim();
+            const unitPrice = parseInt(orderMatch[3].replace(/,/g, "")) || 0;
+            const quantity = parseInt(orderMatch[4]) || 0;
+            const subtotal = parseInt(orderMatch[5].replace(/,/g, "")) || 0;
+
+            if (quantity > 0) {
+                results.push({
+                    hinban,
+                    productName,
+                    janCode: "",  // JANコードなし — 品番でフォールバック検索
+                    spec: "",
+                    quantity,
+                    unitPrice,
+                    subtotal,
+                });
+            }
+        }
+    }
+
     return results;
 }
 
@@ -329,11 +355,14 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
         const items = [];
         for (let i = 0; i < parsed.length; i++) {
             const p = parsed[i];
-            // 1. JANコードで検索
-            let product = await prisma.product.findUnique({
-                where: { janCode: p.janCode },
-                select: { id: true, name: true, janCode: true, currentStock: true },
-            });
+            // 1. JANコードで検索（空文字の場合はスキップ）
+            let product = null;
+            if (p.janCode) {
+                product = await prisma.product.findUnique({
+                    where: { janCode: p.janCode },
+                    select: { id: true, name: true, janCode: true, currentStock: true },
+                });
+            }
             // 2. JANコード未ヒット → 品番でフォールバック検索
             if (!product && p.hinban) {
                 product = await prisma.product.findFirst({
@@ -345,6 +374,19 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
                     },
                     select: { id: true, name: true, janCode: true, currentStock: true },
                 });
+            }
+            // 3. 品番未ヒット → 商品名で部分一致検索
+            if (!product && p.productName) {
+                const nameTokens = p.productName.split(/\s+/).filter((t: string) => t.length >= 2);
+                if (nameTokens.length > 0) {
+                    product = await prisma.product.findFirst({
+                        where: {
+                            isActive: true,
+                            AND: nameTokens.map((t: string) => ({ name: { contains: t } })),
+                        },
+                        select: { id: true, name: true, janCode: true, currentStock: true },
+                    });
+                }
             }
             items.push({
                 row: i + 1,
