@@ -77,6 +77,18 @@ analyticsRouter.get("/dashboard", async (req, res) => {
             seasonalNote = "📈 繁忙期の真っ最中です。在庫切れに注意してください。";
         }
 
+        // 値引き・セット売り集計（discount_records）
+        const discountAgg = await prisma.discountRecord.aggregate({
+            _sum: { amount: true },
+            _count: true,
+            where: { recordType: "DISCOUNT" },
+        });
+        const setItemAgg = await prisma.discountRecord.aggregate({
+            _sum: { amount: true },
+            _count: true,
+            where: { recordType: "SET_ITEM" },
+        });
+
         // Smaregi sync status
         const smaregiConfig = await prisma.smaregiConfig.findFirst();
 
@@ -90,6 +102,10 @@ analyticsRouter.get("/dashboard", async (req, res) => {
             salesTrend,
             forecastNextMonth,
             seasonalNote,
+            discountTotal: discountAgg._sum.amount || 0,
+            discountCount: discountAgg._count || 0,
+            setItemTotal: setItemAgg._sum.amount || 0,
+            setItemCount: setItemAgg._count || 0,
             alertProducts: alerts.slice(0, 10).map((p) => ({
                 id: p.id,
                 name: p.name,
@@ -105,7 +121,9 @@ analyticsRouter.get("/dashboard", async (req, res) => {
         res.json({
             alertCount: 0, totalStock: 0, totalProducts: 0,
             monthlySales: 0, salesChange: 0, grossMarginRate: 0,
-            salesTrend: [], forecastNextMonth: 0, seasonalNote: null, alertProducts: [],
+            salesTrend: [], forecastNextMonth: 0, seasonalNote: null,
+            discountTotal: 0, discountCount: 0, setItemTotal: 0, setItemCount: 0,
+            alertProducts: [],
             lastSyncAt: null, syncEnabled: false,
         });
     }

@@ -88,11 +88,27 @@ model CsvImport {
   status      String   @default("PENDING")
   importedAt  DateTime @default(now()) @map("imported_at")
 
-  user         User                   @relation(fields: [userId], references: [id])
-  salesRecords SalesRecord[]
-  transactions InventoryTransaction[]
-  monthlySales MonthlySales[]
+  user            User                   @relation(fields: [userId], references: [id])
+  salesRecords    SalesRecord[]
+  discountRecords DiscountRecord[]
+  transactions    InventoryTransaction[]
+  monthlySales    MonthlySales[]
   @@map("csv_imports")
+}
+
+model DiscountRecord {
+  id            Int      @id @default(autoincrement())
+  csvImportId   Int      @map("csv_import_id")
+  recordType    String   @map("record_type") // 'DISCOUNT' | 'SET_ITEM' | 'OTHER'
+  itemName      String   @map("item_name")
+  amount        Int      // マイナス（値引き）またはプラス（セット売り）
+  transactionId String?  @map("transaction_id")
+  transactionDate DateTime? @map("transaction_date")
+  bundleGroupId String?  @map("bundle_group_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  csvImport CsvImport @relation(fields: [csvImportId], references: [id])
+  @@map("discount_records")
 }
 
 model SalesRecord {

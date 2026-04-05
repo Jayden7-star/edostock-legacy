@@ -21,6 +21,10 @@ interface DashboardData {
   salesTrend: { month: string; sales: number }[];
   forecastNextMonth: number;
   seasonalNote: string | null;
+  discountTotal: number;
+  discountCount: number;
+  setItemTotal: number;
+  setItemCount: number;
   alertProducts: { id: number; name: string; currentStock: number; reorderPoint: number; category: string }[];
   lastSyncAt: string | null;
   syncEnabled: boolean;
@@ -43,7 +47,9 @@ const Index = () => {
   const d = data || {
     alertCount: 0, totalStock: 0, totalProducts: 0,
     monthlySales: 0, salesChange: 0, grossMarginRate: 0,
-    salesTrend: [], forecastNextMonth: 0, seasonalNote: null, alertProducts: [],
+    salesTrend: [], forecastNextMonth: 0, seasonalNote: null,
+    discountTotal: 0, discountCount: 0, setItemTotal: 0, setItemCount: 0,
+    alertProducts: [],
     lastSyncAt: null, syncEnabled: false,
   };
 
@@ -92,6 +98,29 @@ const Index = () => {
           delay={0.24}
         />
       </div>
+
+      {/* 値引き・セット売り内訳（データがある場合のみ表示） */}
+      {(d.discountCount > 0 || d.setItemCount > 0) && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          className="glass-card p-4 flex flex-wrap gap-6 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-foreground text-sm">売上内訳</span>
+          </div>
+          <div>
+            値引き合計: <span className="font-num font-semibold text-red-500">¥{d.discountTotal.toLocaleString()}</span>
+            <span className="ml-1">({d.discountCount}件)</span>
+          </div>
+          <div>
+            セット売り合計: <span className="font-num font-semibold text-blue-500">¥{d.setItemTotal.toLocaleString()}</span>
+            <span className="ml-1">({d.setItemCount}件)</span>
+          </div>
+          <div>
+            調整合計: <span className={`font-num font-semibold ${d.discountTotal + d.setItemTotal < 0 ? "text-red-500" : "text-emerald-500"}`}>
+              ¥{(d.discountTotal + d.setItemTotal).toLocaleString()}
+            </span>
+          </div>
+        </motion.div>
+      )}
 
       {/* チャート + アラート */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-5">

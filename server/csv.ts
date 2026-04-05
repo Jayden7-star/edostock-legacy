@@ -18,12 +18,35 @@ csvRouter.post("/", async (req, res) => {
 
             for (const record of records) {
                 const janCode = record["商品コード"]?.trim();
-                if (!janCode || janCode === "合計" || janCode === "") continue;
+                const productName = record["商品名"]?.trim() || "";
+
+                // 合計行はスキップ
+                if (janCode === "合計" || productName === "合計") continue;
+
+                // 商品コード空欄行 → discount_records に保存
+                if (!janCode || janCode === "") {
+                    const amount = parseInt(record["値引き後計"]) || 0;
+                    if (amount === 0) continue; // 金額0の空行はスキップ
+
+                    const recordType = amount < 0 ? "DISCOUNT" : "SET_ITEM";
+                    const transactionDate = record["取引日時"]?.trim();
+                    await prisma.discountRecord.create({
+                        data: {
+                            csvImportId: csvImport.id,
+                            recordType,
+                            itemName: productName,
+                            amount,
+                            transactionId: record["取引ID"]?.trim() || null,
+                            transactionDate: transactionDate ? new Date(transactionDate) : null,
+                            bundleGroupId: record["商品バンドルグループID"]?.trim() || null,
+                        },
+                    });
+                    continue;
+                }
 
                 const quantitySold = parseInt(record["数量"]) || 0;
                 const netSales = parseInt(record["値引き後計"]) || 0;
                 const categoryName = record["部門名"]?.trim() || "";
-                const productName = record["商品名"]?.trim() || "";
 
                 let product = await prisma.product.findUnique({ where: { janCode } });
                 if (!product) {
@@ -43,16 +66,16 @@ csvRouter.post("/", async (req, res) => {
                 }
 
                 await prisma.salesRecord.create({
-    data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
-});
+                    data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
+                });
 
-// 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
-if (product.currentStock !== null) {
-    await prisma.product.update({
-        where: { id: product.id },
-        data: { currentStock: { decrement: quantitySold } },
-    });
-}
+                // 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
+                if (product.currentStock !== null) {
+                    await prisma.product.update({
+                        where: { id: product.id },
+                        data: { currentStock: { decrement: quantitySold } },
+                    });
+                }
             }
 
             return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
@@ -110,13 +133,25 @@ csvRouter.post("/preview", async (req, res) => {
     try {
         const { records } = req.body;
 
-        // JANコードごとに集計
+        // JANコードごとに集計 + 値引き・セット売り集計
         const aggregated: Record<string, { productName: string; soldQty: number }> = {};
+        let discountTotal = 0;
+        let setItemTotal = 0;
+        let discountCount = 0;
+        let setItemCount = 0;
         for (const record of records) {
             const janCode = record["商品コード"]?.trim();
-            if (!janCode || janCode === "合計" || janCode === "") continue;
-            const soldQty = parseInt(record["数量"]) || 0;
             const productName = record["商品名"]?.trim() || "";
+            if (janCode === "合計" || productName === "合計") continue;
+
+            if (!janCode || janCode === "") {
+                const amount = parseInt(record["値引き後計"]) || 0;
+                if (amount < 0) { discountTotal += amount; discountCount++; }
+                else if (amount > 0) { setItemTotal += amount; setItemCount++; }
+                continue;
+            }
+
+            const soldQty = parseInt(record["数量"]) || 0;
             if (!aggregated[janCode]) {
                 aggregated[janCode] = { productName, soldQty: 0 };
             }
@@ -136,7 +171,7 @@ csvRouter.post("/preview", async (req, res) => {
             }
         }
 
-        res.json({ matched, unmatched });
+        res.json({ matched, unmatched, discountTotal, setItemTotal, discountCount, setItemCount });
     } catch (error) {
         console.error("CSV preview error:", error);
         res.status(500).json({ error: "プレビューに失敗しました" });
