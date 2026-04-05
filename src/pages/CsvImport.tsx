@@ -679,8 +679,10 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
   const [dupWarning, setDupWarning] = useState<HistoryItem | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // ジャヌツー: ユーザーが手動で選択した商品マッピング (row → productId)
+  // ユーザーが手動で選択した商品マッピング (row → productId)
   const [jannuProductSelections, setJannuProductSelections] = useState<Map<number, number>>(new Map());
+  const [etoileProductSelections, setEtoileProductSelections] = useState<Map<number, number>>(new Map());
+  const [corecProductSelections, setCorecProductSelections] = useState<Map<number, number>>(new Map());
   // 商品マスタ一覧（ドロップダウン用）
   const [allProducts, setAllProducts] = useState<{ id: number; name: string }[]>([]);
 
@@ -725,6 +727,11 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                 // Default: auto-register all unmatched
                 const unmatchedRows = new Set<number>(data.results.filter((r: PurchaseMatchResult) => r.status === "unmatched").map((r: PurchaseMatchResult) => r.row));
                 setAutoRegisterSet(unmatchedRows);
+                // 商品マスタをフェッチ（ドロップダウ��用）
+                fetch("/api/products", { credentials: "include" })
+                  .then((r) => r.json())
+                  .then((d) => { setAllProducts(Array.isArray(d) ? d : []); })
+                  .catch(() => {});
                 setStep(1);
               } else {
                 toast({ title: "エラー", description: data.error, variant: "destructive" });
@@ -764,6 +771,11 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
             totalQuantity: items.reduce((sum, i) => sum + i.quantity, 0),
             totalCost: items.reduce((sum, i) => sum + i.subtotal, 0),
           });
+          // 商品マスタをフェッチ（ドロップダウン用）
+          fetch("/api/products", { credentials: "include" })
+            .then((r) => r.json())
+            .then((d) => { setAllProducts(Array.isArray(d) ? d : []); })
+            .catch(() => {});
           setStep(1);
         } else {
           toast({ title: "PDF解析エラー", description: data.error || "解析に失敗しました", variant: "destructive" });
@@ -856,15 +868,26 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
     setConfirming(true);
     try {
       if (supplier === "corec") {
-        const itemsWithAutoRegister = corecItems.map((item) => ({
-          ...item,
-          autoRegister: !item.matched && autoRegisterSet.has(item.row),
-        }));
+        const corecMappings = Array.from(corecProductSelections.entries())
+          .map(([row, productId]) => {
+            const item = corecItems.find((i) => i.row === row);
+            if (!item) return null;
+            return { supplierProductName: `${item.hinban} ${item.productName}`.trim(), productId };
+          })
+          .filter(Boolean);
+        const itemsWithAutoRegister = corecItems.map((item) => {
+          const selectedProductId = corecProductSelections.get(item.row);
+          return {
+            ...item,
+            matchedProductId: item.matchedProductId || selectedProductId || null,
+            autoRegister: !item.matched && !selectedProductId && autoRegisterSet.has(item.row),
+          };
+        });
         const res = await fetch("/api/purchase-import/corec/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ items: itemsWithAutoRegister, filename: file?.name || "corec_import.pdf" }),
+          body: JSON.stringify({ items: itemsWithAutoRegister, filename: file?.name || "corec_import.pdf", mappings: corecMappings }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -907,15 +930,26 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
           toast({ title: "エラー", description: data.error, variant: "destructive" });
         }
       } else {
-        const itemsWithAutoRegister = matchResults.map((item) => ({
-          ...item,
-          autoRegister: item.status === "unmatched" && autoRegisterSet.has(item.row),
-        }));
+        const etoileMappings = Array.from(etoileProductSelections.entries())
+          .map(([row, productId]) => {
+            const item = matchResults.find((r) => r.row === row);
+            if (!item) return null;
+            return { supplierProductName: item.csvName, productId };
+          })
+          .filter(Boolean);
+        const itemsWithAutoRegister = matchResults.map((item) => {
+          const selectedProductId = etoileProductSelections.get(item.row);
+          return {
+            ...item,
+            matchedId: item.matchedId || selectedProductId || null,
+            autoRegister: item.status === "unmatched" && !selectedProductId && autoRegisterSet.has(item.row),
+          };
+        });
         const res = await fetch("/api/purchase-import/etoile/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ items: itemsWithAutoRegister }),
+          body: JSON.stringify({ items: itemsWithAutoRegister, mappings: etoileMappings }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -943,6 +977,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
     setConfirmResult(null);
     setAutoRegisterSet(new Set());
     setJannuProductSelections(new Map());
+    setEtoileProductSelections(new Map());
+    setCorecProductSelections(new Map());
     setAllProducts([]);
   };
 
@@ -1202,10 +1238,33 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                             <td className="py-3 px-3">
                               {item.matchedProductName ? (
                                 <span className="text-xs text-edo-success">{item.matchedProductName}</span>
-                              ) : isAutoReg ? (
-                                <span className="text-xs text-edo-info font-medium">新規登録予定</span>
                               ) : (
-                                <span className="text-xs text-muted-foreground italic">スキップ</span>
+                                <div className="space-y-1">
+                                  <Select
+                                    value={corecProductSelections.get(item.row)?.toString() ?? ""}
+                                    onValueChange={(val) => {
+                                      const s = new Map(corecProductSelections);
+                                      if (val) s.set(item.row, parseInt(val));
+                                      else s.delete(item.row);
+                                      setCorecProductSelections(s);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
+                                      <SelectValue placeholder="どの商品に対応しますか？" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {allProducts.map((p) => (
+                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {!corecProductSelections.has(item.row) && isAutoReg && (
+                                    <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
+                                  )}
+                                  {!corecProductSelections.has(item.row) && !isAutoReg && (
+                                    <span className="text-[10px] text-muted-foreground italic">スキップ</span>
+                                  )}
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1243,10 +1302,33 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                             <td className="py-3 px-3">
                               {r.matchedProduct ? (
                                 <span className="text-xs text-edo-success">{r.matchedProduct}</span>
-                              ) : isAutoReg ? (
-                                <span className="text-xs text-edo-info font-medium">新規登録予定</span>
                               ) : (
-                                <span className="text-xs text-muted-foreground italic">スキップ</span>
+                                <div className="space-y-1">
+                                  <Select
+                                    value={etoileProductSelections.get(r.row)?.toString() ?? ""}
+                                    onValueChange={(val) => {
+                                      const s = new Map(etoileProductSelections);
+                                      if (val) s.set(r.row, parseInt(val));
+                                      else s.delete(r.row);
+                                      setEtoileProductSelections(s);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
+                                      <SelectValue placeholder="どの商品に対応しますか？" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {allProducts.map((p) => (
+                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {!etoileProductSelections.has(r.row) && isAutoReg && (
+                                    <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
+                                  )}
+                                  {!etoileProductSelections.has(r.row) && !isAutoReg && (
+                                    <span className="text-[10px] text-muted-foreground italic">スキップ</span>
+                                  )}
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1268,6 +1350,14 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                   ? summary.matched
                     + jannuProductSelections.size
                     + Array.from(autoRegisterSet).filter((r) => !jannuProductSelections.has(r)).length
+                  : supplier === "etoile"
+                  ? summary.matched
+                    + etoileProductSelections.size
+                    + Array.from(autoRegisterSet).filter((r) => !etoileProductSelections.has(r)).length
+                  : supplier === "corec"
+                  ? summary.matched
+                    + corecProductSelections.size
+                    + Array.from(autoRegisterSet).filter((r) => !corecProductSelections.has(r)).length
                   : summary.matched + autoRegisterSet.size;
                 return (
                   <Button

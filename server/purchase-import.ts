@@ -94,7 +94,23 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
         const subtotal = parseInt(r["小計"]) || 0;
 
         const cleanName = rawName.replace(/★[^★]*★/g, "").replace(/【[^】]*】/g, "").trim();
-        const match = await matchProduct(janCode || null, itemCode || null, cleanName, color || null);
+
+        // 保存済みマッピングを優先参照
+        const supplierProductName = `${cleanName}${color ? ` ${color}` : ""}${size ? ` ${size}` : ""}`.trim();
+        const savedMapping = await prisma.supplierProductMapping.findUnique({
+            where: {
+                supplierName_supplierProductName: {
+                    supplierName: "ETOILE",
+                    supplierProductName,
+                },
+            },
+            include: {
+                product: { select: { id: true, name: true, janCode: true } },
+            },
+        });
+        const match = savedMapping
+            ? { id: savedMapping.product.id, name: savedMapping.product.name, janCode: savedMapping.product.janCode }
+            : await matchProduct(janCode || null, itemCode || null, cleanName, color || null);
 
         results.push({
             row: i + 1,
@@ -121,7 +137,7 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
 
 purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
     const userId = (req.session as any).userId;
-    const { items, orderDate } = req.body;
+    const { items, orderDate, mappings } = req.body;
     if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: "確定データがありません" });
     }
@@ -181,6 +197,27 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
 
         addedCount++;
         totalQty += quantity;
+    }
+
+    // SupplierProductMapping を upsert 保存
+    if (Array.isArray(mappings)) {
+        for (const m of mappings) {
+            if (!m.supplierProductName || !m.productId) continue;
+            await prisma.supplierProductMapping.upsert({
+                where: {
+                    supplierName_supplierProductName: {
+                        supplierName: "ETOILE",
+                        supplierProductName: m.supplierProductName,
+                    },
+                },
+                update: { productId: m.productId },
+                create: {
+                    supplierName: "ETOILE",
+                    supplierProductName: m.supplierProductName,
+                    productId: m.productId,
+                },
+            });
+        }
     }
 
     res.json({ success: true, addedCount, totalQuantity: totalQty, newlyRegistered });
@@ -355,9 +392,25 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
         const items = [];
         for (let i = 0; i < parsed.length; i++) {
             const p = parsed[i];
+
+            // 0. 保存済みマッピングを優先参照
+            const supplierProductName = `${p.hinban} ${p.productName}`.trim();
+            const savedMapping = await prisma.supplierProductMapping.findUnique({
+                where: {
+                    supplierName_supplierProductName: {
+                        supplierName: "COREC",
+                        supplierProductName,
+                    },
+                },
+                include: {
+                    product: { select: { id: true, name: true, janCode: true, currentStock: true } },
+                },
+            });
+
+            let product = savedMapping ? savedMapping.product : null;
+
             // 1. JANコードで検索（空文字の場合はスキップ）
-            let product = null;
-            if (p.janCode) {
+            if (!product && p.janCode) {
                 product = await prisma.product.findUnique({
                     where: { janCode: p.janCode },
                     select: { id: true, name: true, janCode: true, currentStock: true },
@@ -412,7 +465,7 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
 
 purchaseImportRouter.post("/corec/confirm", async (req, res) => {
     const userId = (req.session as any).userId;
-    const { items, filename } = req.body;
+    const { items, filename, mappings } = req.body;
     if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: "確定データがありません" });
     }
@@ -500,6 +553,27 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
             }
 
             processed++;
+        }
+
+        // SupplierProductMapping を upsert 保存
+        if (Array.isArray(mappings)) {
+            for (const m of mappings) {
+                if (!m.supplierProductName || !m.productId) continue;
+                await prisma.supplierProductMapping.upsert({
+                    where: {
+                        supplierName_supplierProductName: {
+                            supplierName: "COREC",
+                            supplierProductName: m.supplierProductName,
+                        },
+                    },
+                    update: { productId: m.productId },
+                    create: {
+                        supplierName: "COREC",
+                        supplierProductName: m.supplierProductName,
+                        productId: m.productId,
+                    },
+                });
+            }
         }
 
         res.json({ success: true, processed, skipped, newlyRegistered });
