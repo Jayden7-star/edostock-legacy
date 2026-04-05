@@ -42,11 +42,14 @@ async function matchProduct(
         if (byNameAndColor) return byNameAndColor;
     }
 
-    const byName = await prisma.product.findFirst({
-        where: { isActive: true, name: { contains: cleanName } },
-        select: { id: true, name: true, janCode: true },
-    });
-    if (byName) return byName;
+    // カラー情報がある場合は名前のみの曖昧検索をスキップ（誤マッチ防止）
+    if (!color) {
+        const byName = await prisma.product.findFirst({
+            where: { isActive: true, name: { contains: cleanName } },
+            select: { id: true, name: true, janCode: true },
+        });
+        if (byName) return byName;
+    }
 
     if (itemCode) {
         const byItemCode = await prisma.product.findUnique({
