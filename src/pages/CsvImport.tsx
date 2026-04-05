@@ -801,10 +801,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
               if (res.ok) {
                 setMatchResults(data.results);
                 setSummary(data.summary);
-                // Default: auto-register all unmatched
-                const unmatchedRows = new Set<number>(data.results.filter((r: PurchaseMatchResult) => r.status === "unmatched").map((r: PurchaseMatchResult) => r.row));
-                setAutoRegisterSet(unmatchedRows);
-                // 商品マスタをフェッチ（ドロップダウ��用）
+                // エトワールは自動登録しないのでautoRegisterSetは空のまま
+                // 商品マスタをフェッチ（ドロップダウン用）
                 fetch("/api/products", { credentials: "include" })
                   .then((r) => r.json())
                   .then((d) => { setAllProducts(Array.isArray(d) ? d : []); })
@@ -1014,25 +1012,24 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
             return { supplierProductName: item.csvName, productId };
           })
           .filter(Boolean);
-        const itemsWithAutoRegister = matchResults.map((item) => {
+        const itemsForConfirm = matchResults.map((item) => {
           const selectedProductId = etoileProductSelections.get(item.row);
           return {
             ...item,
             matchedId: item.matchedId || selectedProductId || null,
-            autoRegister: item.status === "unmatched" && !selectedProductId && autoRegisterSet.has(item.row),
           };
         });
         const res = await fetch("/api/purchase-import/etoile/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ items: itemsWithAutoRegister, mappings: etoileMappings }),
+          body: JSON.stringify({ items: itemsForConfirm, mappings: etoileMappings }),
         });
         const data = await res.json();
         if (res.ok) {
-          setConfirmResult({ ...data, newlyRegistered: data.newlyRegistered });
+          setConfirmResult({ addedCount: data.addedCount, totalQuantity: data.totalQuantity, skipped: data.skipped });
           setStep(2);
-          toast({ title: "入庫完了", description: `${data.addedCount}品目 / ${data.totalQuantity}点を入庫しました${data.newlyRegistered ? `（${data.newlyRegistered}品自動登録）` : ""}` });
+          toast({ title: "入庫完了", description: `${data.addedCount}品目 / ${data.totalQuantity}点を入庫しました${data.skipped ? `（${data.skipped}件スキップ）` : ""}` });
         } else {
           toast({ title: "エラー", description: data.error, variant: "destructive" });
         }
@@ -1184,7 +1181,17 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
             </div>
 
             {/* 注意バナー（未マッチあり） */}
-            {summary.unmatched > 0 && (
+            {summary.unmatched > 0 && supplier === "etoile" ? (
+              <div className="glass-card p-4 border-amber-400/20 flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-amber-400">{summary.unmatched}件</span>
+                  の未マッチ商品があります。ドロップダウンから対応する商品を選択してください。選択しない商品はスキップされます。
+                  <br />
+                  <span className="text-[11px] text-muted-foreground">※ 対応する商品がない場合は、先にスマレジで商品を登録してください。</span>
+                </p>
+              </div>
+            ) : summary.unmatched > 0 ? (
               <div className="glass-card p-4 border-edo-info/20 flex items-center gap-3">
                 <Plus className="w-5 h-5 text-edo-info flex-shrink-0" />
                 <p className="text-sm text-muted-foreground">
@@ -1192,7 +1199,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                   の未マッチ商品を自動登録して入庫します。チェックを外した商品はスキップされます。
                 </p>
               </div>
-            )}
+            ) : null}
 
             {/* マッチ結果テーブル */}
             <div className="glass-card overflow-hidden">
@@ -1333,24 +1340,23 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                       })
                     ) : (
                       matchResults.map((r) => {
-                        const isAutoReg = r.status === "unmatched" && autoRegisterSet.has(r.row);
                         return (
                           <tr
                             key={r.row}
                             className={cn(
                               "border-b border-border/30 transition-colors",
                               r.status === "matched" && "bg-edo-success/5",
-                              r.status === "unmatched" && isAutoReg && "bg-edo-info/10",
-                              r.status === "unmatched" && !isAutoReg && "bg-edo-warning/10"
+                              r.status === "unmatched" && etoileProductSelections.has(r.row) && "bg-edo-info/10",
+                              r.status === "unmatched" && !etoileProductSelections.has(r.row) && "bg-edo-warning/10"
                             )}
                           >
                             <td className="py-3 px-3 text-center">
                               {r.status === "matched" ? (
                                 <Badge className="bg-edo-success/15 text-edo-success border-edo-success/30 text-[10px]">✓</Badge>
-                              ) : isAutoReg ? (
-                                <input type="checkbox" checked={true} onChange={() => { const s = new Set(autoRegisterSet); s.delete(r.row); setAutoRegisterSet(s); }} className="w-4 h-4 accent-[hsl(var(--edo-info))] cursor-pointer" />
+                              ) : etoileProductSelections.has(r.row) ? (
+                                <Badge className="bg-edo-info/15 text-edo-info border-edo-info/30 text-[10px]">✓</Badge>
                               ) : (
-                                <input type="checkbox" checked={false} onChange={() => { const s = new Set(autoRegisterSet); s.add(r.row); setAutoRegisterSet(s); }} className="w-4 h-4 cursor-pointer" />
+                                <Badge className="bg-amber-400/15 text-amber-400 border-amber-400/30 text-[10px]">?</Badge>
                               )}
                             </td>
                             <td className="py-3 px-3">
@@ -1375,11 +1381,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                                       setEtoileProductSelections(s);
                                     }}
                                   />
-                                  {!etoileProductSelections.has(r.row) && isAutoReg && (
-                                    <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
-                                  )}
-                                  {!etoileProductSelections.has(r.row) && !isAutoReg && (
-                                    <span className="text-[10px] text-muted-foreground italic">スキップ</span>
+                                  {!etoileProductSelections.has(r.row) && (
+                                    <span className="text-[10px] text-muted-foreground italic">スキップ（商品を選択してください）</span>
                                   )}
                                 </div>
                               )}
@@ -1406,7 +1409,6 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                   : supplier === "etoile"
                   ? summary.matched
                     + etoileProductSelections.size
-                    + Array.from(autoRegisterSet).filter((r) => !etoileProductSelections.has(r)).length
                   : supplier === "corec"
                   ? summary.matched
                     + corecProductSelections.size
@@ -1444,7 +1446,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
               {confirmResult?.newlyRegistered != null && confirmResult.newlyRegistered > 0 && (
                 <div><span className="text-muted-foreground">新規登録: </span><span className="font-num font-semibold text-edo-info">{confirmResult.newlyRegistered}品目</span></div>
               )}
-              {(supplier === "corec" || supplier === "jannu") && confirmResult?.skipped != null && (
+              {(supplier === "corec" || supplier === "jannu" || supplier === "etoile") && confirmResult?.skipped != null && (
                 <div><span className="text-muted-foreground">スキップ: </span><span className="font-num font-semibold text-muted-foreground">{confirmResult.skipped}件</span></div>
               )}
               <div><span className="text-muted-foreground">入庫数量: </span><span className="font-num font-semibold text-edo-success">{confirmResult?.totalQuantity || 0}点</span></div>

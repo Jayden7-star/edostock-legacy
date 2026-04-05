@@ -111,9 +111,11 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
                 product: { select: { id: true, name: true, janCode: true } },
             },
         });
+        // エトワールはマッピングのみで検索（JANコードベースのmatchProductは使わない）
+        // エトワールCSVのJANコードはメーカーJANであり、スマレジの店舗JANと異なるため
         const match = savedMapping
             ? { id: savedMapping.product.id, name: savedMapping.product.name, janCode: savedMapping.product.janCode }
-            : await matchProduct(janCode || null, itemCode || null, cleanName, color || null);
+            : null;
 
         results.push({
             row: i + 1,
@@ -147,7 +149,7 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
 
     let addedCount = 0;
     let totalQty = 0;
-    let newlyRegistered = 0;
+    let skippedCount = 0;
 
     for (const item of items) {
         const quantity = item.quantity || 0;
@@ -155,28 +157,11 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
 
         let productId = item.matchedId;
 
-        // Auto-register unmatched products
-        if (!productId && item.autoRegister) {
-            const categoryId = await getOrCreateDefaultCategory();
-            const janCode = item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            const newProduct = await prisma.product.upsert({
-                where: { janCode },
-                update: {},
-                create: {
-                    name: item.csvName || "不明な商品",
-                    janCode,
-                    categoryId,
-                    costPrice: item.unitCost || 0,
-                    sellingPrice: 0,
-                    currentStock: 0,
-                    supplyType: "OEM",
-                },
-            });
-            productId = newProduct.id;
-            newlyRegistered++;
+        // エトワールは新規商品登録しない（スマレジに先に登録が必要）
+        if (!productId) {
+            skippedCount++;
+            continue;
         }
-
-        if (!productId) continue;
 
         const product = await prisma.product.update({
             where: { id: productId },
@@ -223,7 +208,7 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
         }
     }
 
-    res.json({ success: true, addedCount, totalQuantity: totalQty, newlyRegistered });
+    res.json({ success: true, addedCount, totalQuantity: totalQty, skipped: skippedCount });
 });
 
 // ==================================================
