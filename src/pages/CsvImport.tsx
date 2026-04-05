@@ -51,11 +51,19 @@ interface StockPreviewUnmatched {
   janCode: string;
   productName: string;
   soldQty: number;
+  candidates: { id: number; janCode: string; name: string }[];
 }
 
 interface StockPreviewData {
   matched: StockPreviewMatched[];
   unmatched: StockPreviewUnmatched[];
+}
+
+// 未マッチ商品の手動マッチング選択状態
+// key: csvJanCode, value: { mode, existingProductId }
+interface UnmatchedSelection {
+  mode: "new" | "existing";
+  existingProductId: number | null;
 }
 
 // === 仕入インポート用 ===
@@ -239,6 +247,17 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<StockPreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [unmatchedSelections, setUnmatchedSelections] = useState<Map<string, UnmatchedSelection>>(new Map());
+  const [allProducts, setAllProducts] = useState<{ id: number; janCode: string; name: string }[]>([]);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // 全商品リストの取得（マッチングコンボボックス用）
+  useEffect(() => {
+    fetch("/api/products", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data: any[]) => setAllProducts(data.map((p) => ({ id: p.id, janCode: p.janCode, name: p.name }))))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (step !== 1 || rawRecords.length === 0) return;
@@ -250,7 +269,15 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
       body: JSON.stringify({ records: rawRecords }),
     })
       .then((r) => r.json())
-      .then((data) => setPreviewData(data))
+      .then((data) => {
+        setPreviewData(data);
+        // 未マッチ商品の初期選択状態を設定
+        const selections = new Map<string, UnmatchedSelection>();
+        for (const u of data.unmatched || []) {
+          selections.set(u.janCode, { mode: "new", existingProductId: null });
+        }
+        setUnmatchedSelections(selections);
+      })
       .catch(() => {})
       .finally(() => setPreviewLoading(false));
   }, [step]);
@@ -405,6 +432,19 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   const handleImport = async () => {
     setImporting(true);
     try {
+      // matchOverridesを構築
+      const matchOverrides: { csvJanCode: string; csvProductName: string; existingProductId: number }[] = [];
+      for (const [janCode, sel] of unmatchedSelections.entries()) {
+        if (sel.mode === "existing" && sel.existingProductId) {
+          const unmatchedItem = previewData?.unmatched.find((u) => u.janCode === janCode);
+          matchOverrides.push({
+            csvJanCode: janCode,
+            csvProductName: unmatchedItem?.productName || "",
+            existingProductId: sel.existingProductId,
+          });
+        }
+      }
+
       const res = await fetch("/api/csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -415,6 +455,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
           filename: file?.name || "import.csv",
           periodStart: new Date(periodStart.replace(/\//g, "-")).toISOString(),
           periodEnd: new Date(periodEnd.replace(/\//g, "-")).toISOString(),
+          matchOverrides: matchOverrides.length > 0 ? matchOverrides : undefined,
         }),
       });
       const data = await res.json();
@@ -512,29 +553,89 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
                 <div className="space-y-4">
                   {previewData.unmatched.length > 0 && (
                     <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg p-4">
-                      <div className="flex items-start gap-2 mb-2">
+                      <div className="flex items-start gap-2 mb-3">
                         <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm font-semibold text-amber-400">未マッチ商品 {previewData.unmatched.length}件（インポートは実行されますが、在庫は変動しません）</p>
+                        <p className="text-sm font-semibold text-amber-400">未マッチ商品 {previewData.unmatched.length}件（既存商品を選択するか、新規登録されます）</p>
                       </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs mt-2">
-                          <thead>
-                            <tr className="border-b border-border/30 text-muted-foreground">
-                              <th className="text-left py-1.5 px-3 font-medium">JANコード</th>
-                              <th className="text-left py-1.5 px-3 font-medium">商品名</th>
-                              <th className="text-right py-1.5 px-3 font-medium">売上数</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewData.unmatched.map((u, i) => (
-                              <tr key={i} className="border-b border-border/20">
-                                <td className="py-1.5 px-3 font-num text-muted-foreground">{u.janCode}</td>
-                                <td className="py-1.5 px-3">{u.productName}</td>
-                                <td className="py-1.5 px-3 text-right font-num">{u.soldQty}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="space-y-3">
+                        {previewData.unmatched.map((u) => {
+                          const sel = unmatchedSelections.get(u.janCode) || { mode: "new" as const, existingProductId: null };
+                          return (
+                            <div key={u.janCode} className="border border-border/30 rounded-lg p-3 bg-background/50">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-num text-muted-foreground">{u.janCode}</p>
+                                  <p className="text-sm font-medium truncate">{u.productName}</p>
+                                </div>
+                                <span className="text-xs font-num ml-3 whitespace-nowrap">売上: {u.soldQty}点</span>
+                              </div>
+                              <div className="flex flex-col gap-2 mt-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`match-${u.janCode}`}
+                                    checked={sel.mode === "existing"}
+                                    onChange={() => {
+                                      const next = new Map(unmatchedSelections);
+                                      next.set(u.janCode, { mode: "existing", existingProductId: sel.existingProductId });
+                                      setUnmatchedSelections(next);
+                                    }}
+                                    className="w-3.5 h-3.5"
+                                  />
+                                  <span className="text-xs">既存商品に統合（JAN・名前を更新）</span>
+                                </label>
+                                {sel.mode === "existing" && (
+                                  <div className="ml-6">
+                                    <ProductCombobox
+                                      products={allProducts}
+                                      value={sel.existingProductId}
+                                      onSelect={(productId) => {
+                                        const next = new Map(unmatchedSelections);
+                                        next.set(u.janCode, { mode: "existing", existingProductId: productId });
+                                        setUnmatchedSelections(next);
+                                      }}
+                                      placeholder="既存商品を検索..."
+                                    />
+                                    {u.candidates.length > 0 && !sel.existingProductId && (
+                                      <div className="mt-1.5">
+                                        <p className="text-[10px] text-muted-foreground mb-1">候補:</p>
+                                        <div className="flex flex-wrap gap-1">
+                                          {u.candidates.map((c) => (
+                                            <button
+                                              key={c.id}
+                                              onClick={() => {
+                                                const next = new Map(unmatchedSelections);
+                                                next.set(u.janCode, { mode: "existing", existingProductId: c.id });
+                                                setUnmatchedSelections(next);
+                                              }}
+                                              className="text-[10px] px-1.5 py-0.5 rounded bg-secondary hover:bg-secondary/80 border border-border/30 truncate max-w-48"
+                                            >
+                                              {c.name}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`match-${u.janCode}`}
+                                    checked={sel.mode === "new"}
+                                    onChange={() => {
+                                      const next = new Map(unmatchedSelections);
+                                      next.set(u.janCode, { mode: "new", existingProductId: null });
+                                      setUnmatchedSelections(next);
+                                    }}
+                                    className="w-3.5 h-3.5"
+                                  />
+                                  <span className="text-xs">新規商品として登録</span>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -576,10 +677,63 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
               <Button variant="outline" onClick={() => { setStep(0); setFile(null); setParsedRows([]); setPreviewData(null); }}>
                 <ArrowLeft className="w-4 h-4 mr-2" /> キャンセル
               </Button>
-              <Button className="bg-primary hover:bg-primary/90" onClick={() => setStep(2)} disabled={previewLoading}>
+              <Button
+                className="bg-primary hover:bg-primary/90"
+                onClick={() => {
+                  // 「既存商品に統合」を選んだが商品を選択していない行がないかチェック
+                  const invalid = Array.from(unmatchedSelections.entries()).find(
+                    ([, sel]) => sel.mode === "existing" && !sel.existingProductId
+                  );
+                  if (invalid) {
+                    toast({ title: "選択エラー", description: "「既存商品に統合」を選択した場合は商品を選んでください", variant: "destructive" });
+                    return;
+                  }
+                  // マッチオーバーライドがある場合は確認ダイアログ
+                  const hasOverrides = Array.from(unmatchedSelections.values()).some((sel) => sel.mode === "existing" && sel.existingProductId);
+                  if (hasOverrides) {
+                    setShowConfirmDialog(true);
+                  } else {
+                    setStep(2);
+                  }
+                }}
+                disabled={previewLoading}
+              >
                 確定してインポート <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
+
+            {/* 商品情報更新の確認ダイアログ */}
+            {showConfirmDialog && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-card p-6 max-w-lg w-full mx-4 space-y-4">
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                    商品情報の更新確認
+                  </h3>
+                  <p className="text-sm text-muted-foreground">以下の既存商品のJANコード・商品名がスマレジのデータに上書きされます。この操作は元に戻せません。</p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {Array.from(unmatchedSelections.entries())
+                      .filter(([, sel]) => sel.mode === "existing" && sel.existingProductId)
+                      .map(([janCode, sel]) => {
+                        const unmatchedItem = previewData?.unmatched.find((u) => u.janCode === janCode);
+                        const existingProduct = allProducts.find((p) => p.id === sel.existingProductId);
+                        return (
+                          <div key={janCode} className="border border-border/30 rounded p-2.5 text-xs space-y-1">
+                            <p className="text-muted-foreground">既存: <span className="text-foreground font-medium">{existingProduct?.name}</span> ({existingProduct?.janCode})</p>
+                            <p className="text-primary">↓ 更新後: <span className="font-medium">{unmatchedItem?.productName}</span> ({janCode})</p>
+                          </div>
+                        );
+                      })}
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowConfirmDialog(false)}>キャンセル</Button>
+                    <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={() => { setShowConfirmDialog(false); setStep(2); }}>
+                      更新してインポート
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
           </motion.div>
         )}
 

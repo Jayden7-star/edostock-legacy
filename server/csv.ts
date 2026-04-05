@@ -5,8 +5,16 @@ export const csvRouter = Router();
 
 csvRouter.post("/", async (req, res) => {
     try {
-        const { records, csvType, filename, periodStart, periodEnd } = req.body;
+        const { records, csvType, filename, periodStart, periodEnd, matchOverrides } = req.body;
         const userId = (req.session as any).userId;
+
+        // matchOverridesをMapに変換（csvJanCode → { csvProductName, existingProductId }）
+        const overrideMap = new Map<string, { csvProductName: string; existingProductId: number }>();
+        if (Array.isArray(matchOverrides)) {
+            for (const o of matchOverrides) {
+                overrideMap.set(o.csvJanCode, { csvProductName: o.csvProductName, existingProductId: o.existingProductId });
+            }
+        }
 
         if (csvType === "PRODUCT_SALES") {
             const csvImport = await prisma.csvImport.create({
@@ -50,19 +58,29 @@ csvRouter.post("/", async (req, res) => {
 
                 let product = await prisma.product.findUnique({ where: { janCode } });
                 if (!product) {
-                    let category = await prisma.category.findUnique({ where: { name: categoryName } });
-                    if (!category) {
-                        category = await prisma.category.create({
-                            data: { name: categoryName, displayName: categoryName.replace("☆　", ""), isFood: !categoryName.startsWith("☆"), displayOrder: 99 },
+                    const override = overrideMap.get(janCode);
+                    if (override) {
+                        // 手動マッチング: 既存商品のJAN・名前をスマレジのデータに更新
+                        product = await prisma.product.update({
+                            where: { id: override.existingProductId },
+                            data: { janCode, name: override.csvProductName },
+                        });
+                    } else {
+                        // 新規商品として登録（従来通り）
+                        let category = await prisma.category.findUnique({ where: { name: categoryName } });
+                        if (!category) {
+                            category = await prisma.category.create({
+                                data: { name: categoryName, displayName: categoryName.replace("☆　", ""), isFood: !categoryName.startsWith("☆"), displayOrder: 99 },
+                            });
+                        }
+                        product = await prisma.product.create({
+                            data: {
+                                janCode, name: productName, categoryId: category.id,
+                                color: record["カラー"]?.trim() || null, size: record["サイズ"]?.trim() || null,
+                                sellingPrice: quantitySold > 0 ? Math.round(netSales / quantitySold) : 0,
+                            },
                         });
                     }
-                    product = await prisma.product.create({
-                        data: {
-                            janCode, name: productName, categoryId: category.id,
-                            color: record["カラー"]?.trim() || null, size: record["サイズ"]?.trim() || null,
-                            sellingPrice: quantitySold > 0 ? Math.round(netSales / quantitySold) : 0,
-                        },
-                    });
                 }
 
                 await prisma.salesRecord.create({
@@ -159,7 +177,7 @@ csvRouter.post("/preview", async (req, res) => {
         }
 
         const matched: { productName: string; currentStock: number | null; soldQty: number; afterStock: number | null }[] = [];
-        const unmatched: { janCode: string; productName: string; soldQty: number }[] = [];
+        const unmatched: { janCode: string; productName: string; soldQty: number; candidates: { id: number; janCode: string; name: string }[] }[] = [];
 
         for (const [janCode, { productName, soldQty }] of Object.entries(aggregated)) {
             const product = await prisma.product.findUnique({ where: { janCode } });
@@ -167,7 +185,18 @@ csvRouter.post("/preview", async (req, res) => {
                 const afterStock = product.currentStock !== null ? product.currentStock - soldQty : null;
                 matched.push({ productName: product.name, currentStock: product.currentStock, soldQty, afterStock });
             } else {
-                unmatched.push({ janCode, productName, soldQty });
+                // あいまい検索: 商品名のキーワードで候補を探す
+                const keywords = productName.replace(/[\s　]+/g, " ").trim().split(" ").filter((k: string) => k.length >= 2);
+                let candidates: { id: number; janCode: string; name: string }[] = [];
+                if (keywords.length > 0) {
+                    const whereConditions = keywords.map((kw: string) => ({ name: { contains: kw } }));
+                    candidates = await prisma.product.findMany({
+                        where: { isActive: true, OR: whereConditions },
+                        select: { id: true, janCode: true, name: true },
+                        take: 10,
+                    });
+                }
+                unmatched.push({ janCode, productName, soldQty, candidates });
             }
         }
 
