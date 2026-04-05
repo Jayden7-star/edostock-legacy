@@ -52,6 +52,11 @@ const ProductSettings = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkField, setBulkField] = useState<string>("");
+  const [bulkValue, setBulkValue] = useState<string>("");
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const { toast } = useToast();
   const scrollYRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
@@ -157,6 +162,93 @@ const ProductSettings = () => {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((p) => p.id)));
+    }
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedIds.size === 0 || !bulkField) return;
+    setBulkSubmitting(true);
+    try {
+      const productIds = Array.from(selectedIds);
+
+      if (bulkField === "currentStock") {
+        const items = productIds.map((id) => ({ productId: id, newStock: parseInt(bulkValue) || 0 }));
+        const res = await fetch("/api/products/bulk-stock", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ items }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast({ title: "一括更新完了", description: `${data.updatedCount}件の在庫を更新しました` });
+        } else {
+          toast({ title: "エラー", description: data.error, variant: "destructive" });
+          return;
+        }
+      } else if (bulkField === "delete") {
+        if (!confirm(`${selectedIds.size}件の商品を無効化しますか？\n（論理削除：在庫履歴は保持されます）`)) {
+          setBulkSubmitting(false);
+          return;
+        }
+        const res = await fetch("/api/products/bulk-update", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ productIds, updates: { isActive: false } }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast({ title: "一括無効化完了", description: `${data.updatedCount}件を無効化しました` });
+        } else {
+          toast({ title: "エラー", description: data.error, variant: "destructive" });
+          return;
+        }
+      } else {
+        const updates = { [bulkField]: bulkValue };
+        const res = await fetch("/api/products/bulk-update", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ productIds, updates }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast({ title: "一括更新完了", description: `${data.updatedCount}件を更新しました` });
+        } else {
+          toast({ title: "エラー", description: data.error, variant: "destructive" });
+          return;
+        }
+      }
+
+      setBulkModalOpen(false);
+      setBulkField("");
+      setBulkValue("");
+      setSelectedIds(new Set());
+      scrollYRef.current = window.scrollY;
+      shouldRestoreScrollRef.current = true;
+      fetchProducts();
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
   const updateField = (field: string, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
 
   if (loading) {
@@ -180,6 +272,21 @@ const ProductSettings = () => {
         <Button className="bg-primary hover:bg-primary/90 gap-2" onClick={openAdd}>
           <Plus className="w-4 h-4" /> 商品追加
         </Button>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <Badge variant="outline" className="text-xs">{selectedIds.size}件選択中</Badge>
+            <Button size="sm" variant="outline" className="gap-1 h-9" onClick={() => { setBulkField(""); setBulkValue(""); setBulkModalOpen(true); }}>
+              <Pencil className="w-3.5 h-3.5" /> 一括編集
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1 h-9 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => { setBulkField("delete"); handleBulkUpdate(); }}>
+              <Trash2 className="w-3.5 h-3.5" /> 一括無効化
+            </Button>
+            <Button size="sm" variant="ghost" className="h-9 text-xs" onClick={() => setSelectedIds(new Set())}>
+              選択解除
+            </Button>
+          </div>
+        )}
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-card overflow-hidden">
@@ -187,6 +294,14 @@ const ProductSettings = () => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50 text-muted-foreground">
+                <th className="w-10 py-3 px-2 text-center">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 cursor-pointer accent-[hsl(var(--primary))]"
+                    checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th className="text-left py-3 px-4 font-medium">JAN</th>
                 <th className="text-left py-3 px-4 font-medium">商品名</th>
                 <th className="text-left py-3 px-4 font-medium">部門</th>
@@ -201,6 +316,14 @@ const ProductSettings = () => {
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id} className="border-b border-border/30 hover:bg-secondary/30 transition-colors">
+                  <td className="py-3 px-2 text-center">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 cursor-pointer accent-[hsl(var(--primary))]"
+                      checked={selectedIds.has(p.id)}
+                      onChange={() => toggleSelect(p.id)}
+                    />
+                  </td>
                   <td className="py-3 px-4 font-num text-xs text-muted-foreground">{p.janCode}</td>
                   <td className="py-3 px-4 font-medium">{p.name}</td>
                   <td className="py-3 px-4"><Badge variant="outline" className="text-xs">{p.category.displayName}</Badge></td>
@@ -223,7 +346,7 @@ const ProductSettings = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-12 text-center text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p>商品が登録されていません</p>
                   </td>
@@ -292,6 +415,91 @@ const ProductSettings = () => {
             <Button variant="outline" onClick={() => setModalOpen(false)}>キャンセル</Button>
             <Button className="bg-primary hover:bg-primary/90" onClick={handleSave} disabled={submitting}>
               {submitting ? "処理中..." : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 一括編集モーダル */}
+      <Dialog open={bulkModalOpen} onOpenChange={setBulkModalOpen}>
+        <DialogContent className="bg-card border-border/50 max-w-md">
+          <DialogHeader><DialogTitle>{selectedIds.size}件の商品を一括編集</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>変更する項目</Label>
+              <Select value={bulkField} onValueChange={(v) => { setBulkField(v); setBulkValue(""); }}>
+                <SelectTrigger className="bg-secondary/50 border-border/50 h-10">
+                  <SelectValue placeholder="項目を選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="categoryId">部門</SelectItem>
+                  <SelectItem value="costPrice">原価</SelectItem>
+                  <SelectItem value="sellingPrice">売価</SelectItem>
+                  <SelectItem value="reorderPoint">発注点</SelectItem>
+                  <SelectItem value="optimalStock">適正在庫</SelectItem>
+                  <SelectItem value="supplyType">供給タイプ</SelectItem>
+                  <SelectItem value="currentStock">在庫数</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {bulkField && (
+              <div className="space-y-2">
+                <Label>
+                  {bulkField === "categoryId" ? "部門" :
+                   bulkField === "costPrice" ? "原価(円)" :
+                   bulkField === "sellingPrice" ? "売価(円)" :
+                   bulkField === "reorderPoint" ? "発注点" :
+                   bulkField === "optimalStock" ? "適正在庫" :
+                   bulkField === "supplyType" ? "供給タイプ" :
+                   bulkField === "currentStock" ? "在庫数" : "値"}
+                </Label>
+                {bulkField === "categoryId" ? (
+                  <Select value={bulkValue} onValueChange={setBulkValue}>
+                    <SelectTrigger className="bg-secondary/50 border-border/50 h-10">
+                      <SelectValue placeholder="部門を選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : bulkField === "supplyType" ? (
+                  <Select value={bulkValue} onValueChange={setBulkValue}>
+                    <SelectTrigger className="bg-secondary/50 border-border/50 h-10">
+                      <SelectValue placeholder="タイプを選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {supplyTypes.map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    type="number"
+                    value={bulkValue}
+                    onChange={(e) => setBulkValue(e.target.value)}
+                    placeholder="値を入力"
+                    className="bg-secondary/50 border-border/50 h-10"
+                  />
+                )}
+                {bulkField === "currentStock" && (
+                  <p className="text-[10px] text-muted-foreground">
+                    ※ 選択した全商品の在庫数がこの値に設定されます。在庫調整として記録されます。
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkModalOpen(false)}>キャンセル</Button>
+            <Button
+              className="bg-primary hover:bg-primary/90"
+              onClick={handleBulkUpdate}
+              disabled={bulkSubmitting || !bulkField || (!bulkValue && bulkField !== "currentStock")}
+            >
+              {bulkSubmitting ? "処理中..." : `${selectedIds.size}件を更新`}
             </Button>
           </DialogFooter>
         </DialogContent>

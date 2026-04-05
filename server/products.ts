@@ -56,6 +56,94 @@ productsRouter.post("/", requireAdmin, async (req, res) => {
     }
 });
 
+// PUT /api/products/bulk-update — 一括更新（管理者のみ）
+productsRouter.put("/bulk-update", requireAdmin, async (req, res) => {
+    const { productIds, updates } = req.body;
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+        return res.status(400).json({ error: "商品が選択されていません" });
+    }
+    if (!updates || Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "更新項目がありません" });
+    }
+
+    try {
+        // 許可するフィールドのみ抽出
+        const allowedFields = ["categoryId", "costPrice", "sellingPrice", "reorderPoint", "optimalStock", "supplyType", "isActive"];
+        const data: Record<string, any> = {};
+        for (const field of allowedFields) {
+            if (updates[field] !== undefined && updates[field] !== "") {
+                if (field === "categoryId" || field === "costPrice" || field === "sellingPrice" || field === "reorderPoint" || field === "optimalStock") {
+                    data[field] = parseInt(updates[field]);
+                } else if (field === "isActive") {
+                    data[field] = updates[field] === true || updates[field] === "true";
+                } else {
+                    data[field] = updates[field];
+                }
+            }
+        }
+
+        if (Object.keys(data).length === 0) {
+            return res.status(400).json({ error: "有効な更新項目がありません" });
+        }
+
+        const result = await prisma.product.updateMany({
+            where: { id: { in: productIds.map((id: any) => parseInt(id)) } },
+            data,
+        });
+
+        res.json({ success: true, updatedCount: result.count });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "一括更新に失敗しました" });
+    }
+});
+
+// PUT /api/products/bulk-stock — 在庫数の一括設定（管理者のみ）
+// 在庫変更はinventory_transactionsに記録が必要なのでupdateManyではなく個別処理
+productsRouter.put("/bulk-stock", requireAdmin, async (req, res) => {
+    const userId = (req.session as any).userId;
+    const { items } = req.body; // [{ productId: number, newStock: number }]
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "商品が選択されていません" });
+    }
+
+    try {
+        let updatedCount = 0;
+        for (const item of items) {
+            const productId = parseInt(item.productId);
+            const newStock = parseInt(item.newStock);
+            if (isNaN(productId) || isNaN(newStock)) continue;
+
+            const product = await prisma.product.findUnique({ where: { id: productId } });
+            if (!product) continue;
+
+            const diff = newStock - product.currentStock;
+            if (diff === 0) continue;
+
+            await prisma.product.update({
+                where: { id: productId },
+                data: { currentStock: newStock },
+            });
+
+            await prisma.inventoryTransaction.create({
+                data: {
+                    productId,
+                    type: "ADJUSTMENT",
+                    quantity: diff,
+                    stockAfter: newStock,
+                    note: "一括在庫調整",
+                    userId,
+                },
+            });
+
+            updatedCount++;
+        }
+
+        res.json({ success: true, updatedCount });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "在庫一括更新に失敗しました" });
+    }
+});
+
 // PUT /api/products/:id — 商品編集（管理者のみ）
 productsRouter.put("/:id", requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
