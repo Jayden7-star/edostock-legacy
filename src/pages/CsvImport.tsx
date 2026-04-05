@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, CheckCircle, AlertTriangle, ArrowRight, ArrowLeft, X, ShoppingCart, BarChart3, Plus } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertTriangle, ArrowRight, ArrowLeft, X, ShoppingCart, BarChart3, Plus, Check, ChevronsUpDown } from "lucide-react";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +115,81 @@ const suppliers = [
   { value: "corec", label: "コレック", accept: ".pdf", dropText: "コレックの発注書PDFをドラッグ＆ドロップ" },
   { value: "jannu", label: "ジャヌツー", accept: ".xlsx,.xls", dropText: "ジャヌツーの発注Excelファイルをドラッグ＆ドロップ" },
 ];
+
+function ProductCombobox({
+  products,
+  value,
+  onSelect,
+  placeholder = "商品を検索...",
+}: {
+  products: { id: number; name: string }[];
+  value: number | null;
+  onSelect: (productId: number | null) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedProduct = value ? products.find((p) => p.id === value) : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "flex items-center justify-between h-7 w-56 rounded-md border border-border/50 bg-secondary/50 px-2 text-xs",
+            !selectedProduct && "text-muted-foreground"
+          )}
+        >
+          <span className="truncate">
+            {selectedProduct ? selectedProduct.name : "どの商品に対応しますか？"}
+          </span>
+          <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder={placeholder} className="h-8 text-xs" />
+          <CommandList className="max-h-48">
+            <CommandEmpty className="py-2 text-center text-xs text-muted-foreground">
+              商品が見つかりません
+            </CommandEmpty>
+            <CommandGroup>
+              {value && (
+                <CommandItem
+                  onSelect={() => {
+                    onSelect(null);
+                    setOpen(false);
+                  }}
+                  className="text-xs text-edo-info"
+                >
+                  ✚ 新規登録に戻す
+                </CommandItem>
+              )}
+              {products.map((p) => (
+                <CommandItem
+                  key={p.id}
+                  value={p.name}
+                  onSelect={() => {
+                    onSelect(p.id);
+                    setOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <Check
+                    className={cn(
+                      "mr-1 h-3 w-3",
+                      value === p.id ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {p.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const CsvImport = () => {
   const [activeTab, setActiveTab] = useState("sales");
@@ -1177,24 +1254,16 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                                 <span className="text-xs text-edo-success">{item.matchedProductName}</span>
                               ) : (
                                 <div className="space-y-1">
-                                  <Select
-                                    value={jannuProductSelections.get(item.row)?.toString() ?? ""}
-                                    onValueChange={(val) => {
+                                  <ProductCombobox
+                                    products={allProducts}
+                                    value={jannuProductSelections.get(item.row) ?? null}
+                                    onSelect={(productId) => {
                                       const s = new Map(jannuProductSelections);
-                                      if (val) s.set(item.row, parseInt(val));
+                                      if (productId) s.set(item.row, productId);
                                       else s.delete(item.row);
                                       setJannuProductSelections(s);
                                     }}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
-                                      <SelectValue placeholder="どの商品に対応しますか？" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allProducts.map((p) => (
-                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  />
                                   {!jannuProductSelections.has(item.row) && isAutoReg && (
                                     <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
                                   )}
@@ -1240,24 +1309,16 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                                 <span className="text-xs text-edo-success">{item.matchedProductName}</span>
                               ) : (
                                 <div className="space-y-1">
-                                  <Select
-                                    value={corecProductSelections.get(item.row)?.toString() ?? ""}
-                                    onValueChange={(val) => {
+                                  <ProductCombobox
+                                    products={allProducts}
+                                    value={corecProductSelections.get(item.row) ?? null}
+                                    onSelect={(productId) => {
                                       const s = new Map(corecProductSelections);
-                                      if (val) s.set(item.row, parseInt(val));
+                                      if (productId) s.set(item.row, productId);
                                       else s.delete(item.row);
                                       setCorecProductSelections(s);
                                     }}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
-                                      <SelectValue placeholder="どの商品に対応しますか？" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allProducts.map((p) => (
-                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  />
                                   {!corecProductSelections.has(item.row) && isAutoReg && (
                                     <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
                                   )}
@@ -1304,24 +1365,16 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                                 <span className="text-xs text-edo-success">{r.matchedProduct}</span>
                               ) : (
                                 <div className="space-y-1">
-                                  <Select
-                                    value={etoileProductSelections.get(r.row)?.toString() ?? ""}
-                                    onValueChange={(val) => {
+                                  <ProductCombobox
+                                    products={allProducts}
+                                    value={etoileProductSelections.get(r.row) ?? null}
+                                    onSelect={(productId) => {
                                       const s = new Map(etoileProductSelections);
-                                      if (val) s.set(r.row, parseInt(val));
+                                      if (productId) s.set(r.row, productId);
                                       else s.delete(r.row);
                                       setEtoileProductSelections(s);
                                     }}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs w-48 bg-secondary/50 border-border/50">
-                                      <SelectValue placeholder="どの商品に対応しますか？" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allProducts.map((p) => (
-                                        <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  />
                                   {!etoileProductSelections.has(r.row) && isAutoReg && (
                                     <span className="text-[10px] text-edo-info">選択しなければ新規登録</span>
                                   )}
