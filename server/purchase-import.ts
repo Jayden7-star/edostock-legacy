@@ -92,7 +92,9 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
         const rawName = r["商品名"]?.trim() || "";
         const color = r["カラー"]?.trim() || "";
         const size = r["サイズ"]?.trim() || "";
-        const quantity = parseInt(r["num"]) || 0;
+        const num = parseInt(r["num"]) || 0;
+        const wholesaleUnit = parseInt(r["卸単位"]) || 1;
+        const quantity = num * wholesaleUnit;
         const unitCost = parseInt(r["購入卸単価"]) || 0;
         const subtotal = parseInt(r["小計"]) || 0;
 
@@ -122,7 +124,7 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
             status: match ? "matched" as const : "unmatched" as const,
             itemCode, janCode,
             csvName: `${cleanName}${color ? ` ${color}` : ""}${size ? ` ${size}` : ""}`,
-            color, size, quantity, unitCost, subtotal,
+            color, size, num, wholesaleUnit, quantity, unitCost, subtotal,
             matchedProduct: match?.name || null,
             matchedId: match?.id || null,
         });

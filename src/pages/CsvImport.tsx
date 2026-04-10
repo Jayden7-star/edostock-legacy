@@ -1374,6 +1374,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                           <th className="text-left py-3 px-3 font-medium">JANコード</th>
                         </>
                       )}
+                      {supplier === "etoile" && <th className="text-right py-3 px-3 font-medium">num</th>}
+                      {supplier === "etoile" && <th className="text-right py-3 px-3 font-medium">卸単位</th>}
                       <th className="text-right py-3 px-3 font-medium">数量</th>
                       {supplier === "etoile" && <th className="text-right py-3 px-3 font-medium">単価</th>}
                       {supplier === "etoile" && <th className="text-right py-3 px-3 font-medium">小計</th>}
@@ -1517,7 +1519,9 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
                               <p className="font-medium text-xs">{r.csvName}</p>
                             </td>
                             <td className="py-3 px-3 font-num text-xs">{r.janCode || r.itemCode}</td>
-                            <td className="py-3 px-3 text-right font-num">{r.quantity}</td>
+                            <td className="py-3 px-3 text-right font-num">{r.num}</td>
+                            <td className="py-3 px-3 text-right font-num">{r.wholesaleUnit}</td>
+                            <td className="py-3 px-3 text-right font-num font-medium">{r.quantity}</td>
                             <td className="py-3 px-3 text-right font-num">¥{r.unitCost.toLocaleString()}</td>
                             <td className="py-3 px-3 text-right font-num">¥{r.subtotal.toLocaleString()}</td>
                             <td className="py-3 px-3">
