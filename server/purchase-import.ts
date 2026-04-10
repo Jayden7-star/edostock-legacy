@@ -84,6 +84,9 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
         return res.status(400).json({ error: "データがありません" });
     }
 
+    // 注文番号を最初のレコードから取得（全行同一の前提）
+    const orderNumber = records[0]["注文番号"]?.trim() || "";
+
     const results = [];
     for (let i = 0; i < records.length; i++) {
         const r = records[i];
@@ -131,6 +134,7 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
     }
 
     res.json({
+        orderNumber,
         results,
         summary: {
             total: results.length,
@@ -144,73 +148,109 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
 
 purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
     const userId = (req.session as any).userId;
-    const { items, orderDate, mappings } = req.body;
+    const { items, orderDate, orderNumber, mappings } = req.body;
     if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: "確定データがありません" });
     }
 
-    let addedCount = 0;
-    let totalQty = 0;
-    let skippedCount = 0;
-
-    for (const item of items) {
-        const quantity = item.quantity || 0;
-        if (quantity <= 0) continue;
-
-        let productId = item.matchedId;
-
-        // エトワールは新規商品登録しない（スマレジに先に登録が必要）
-        if (!productId) {
-            skippedCount++;
-            continue;
+    try {
+        // 重複チェック: 同一注文番号が既にインポート済みか確認
+        if (orderNumber) {
+            const existing = await prisma.csvImport.findFirst({
+                where: {
+                    filename: { contains: orderNumber },
+                    csvType: "PURCHASE_ETOILE",
+                },
+            });
+            if (existing) {
+                return res.status(409).json({
+                    error: `この注文（${orderNumber}）は既にインポート済みです（${existing.importedAt.toLocaleDateString("ja-JP")}）`,
+                });
+            }
         }
 
-        const product = await prisma.product.update({
-            where: { id: productId },
-            data: { currentStock: { increment: quantity } },
-        });
+        const now = new Date();
 
-        await prisma.inventoryTransaction.create({
+        // CsvImport レコード作成（コレック/ジャヌツーと同様）
+        const csvImport = await prisma.csvImport.create({
             data: {
-                productId,
-                type: "PURCHASE",
-                quantity,
-                stockAfter: product.currentStock,
-                note: `仕入: エトワール海渡${orderDate ? ` (${orderDate})` : ""}`,
+                filename: `仕入: エトワール海渡${orderNumber ? ` ${orderNumber}` : ""}`,
+                periodStart: now,
+                periodEnd: now,
+                csvType: "PURCHASE_ETOILE",
+                recordCount: items.length,
                 userId,
+                status: "COMPLETED",
             },
         });
 
-        if (item.unitCost && item.unitCost > 0) {
-            await prisma.product.update({ where: { id: productId }, data: { costPrice: item.unitCost } });
-        }
+        let addedCount = 0;
+        let totalQty = 0;
+        let skippedCount = 0;
 
-        addedCount++;
-        totalQty += quantity;
-    }
+        for (const item of items) {
+            const quantity = item.quantity || 0;
+            if (quantity <= 0) continue;
 
-    // SupplierProductMapping を upsert 保存
-    if (Array.isArray(mappings)) {
-        for (const m of mappings) {
-            if (!m.supplierProductName || !m.productId) continue;
-            await prisma.supplierProductMapping.upsert({
-                where: {
-                    supplierName_supplierProductName: {
-                        supplierName: "ETOILE",
-                        supplierProductName: m.supplierProductName,
-                    },
-                },
-                update: { productId: m.productId },
-                create: {
-                    supplierName: "ETOILE",
-                    supplierProductName: m.supplierProductName,
-                    productId: m.productId,
+            let productId = item.matchedId;
+
+            // エトワールは新規商品登録しない（スマレジに先に登録が必要）
+            if (!productId) {
+                skippedCount++;
+                continue;
+            }
+
+            const product = await prisma.product.update({
+                where: { id: productId },
+                data: { currentStock: { increment: quantity } },
+            });
+
+            await prisma.inventoryTransaction.create({
+                data: {
+                    productId,
+                    type: "PURCHASE_CSV",
+                    quantity,
+                    stockAfter: product.currentStock,
+                    note: `仕入: エトワール海渡${orderNumber ? ` (${orderNumber})` : ""}${orderDate ? ` ${orderDate}` : ""}`,
+                    userId,
+                    csvImportId: csvImport.id,
                 },
             });
-        }
-    }
 
-    res.json({ success: true, addedCount, totalQuantity: totalQty, skipped: skippedCount });
+            if (item.unitCost && item.unitCost > 0) {
+                await prisma.product.update({ where: { id: productId }, data: { costPrice: item.unitCost } });
+            }
+
+            addedCount++;
+            totalQty += quantity;
+        }
+
+        // SupplierProductMapping を upsert 保存
+        if (Array.isArray(mappings)) {
+            for (const m of mappings) {
+                if (!m.supplierProductName || !m.productId) continue;
+                await prisma.supplierProductMapping.upsert({
+                    where: {
+                        supplierName_supplierProductName: {
+                            supplierName: "ETOILE",
+                            supplierProductName: m.supplierProductName,
+                        },
+                    },
+                    update: { productId: m.productId },
+                    create: {
+                        supplierName: "ETOILE",
+                        supplierProductName: m.supplierProductName,
+                        productId: m.productId,
+                    },
+                });
+            }
+        }
+
+        res.json({ success: true, addedCount, totalQuantity: totalQty, skipped: skippedCount });
+    } catch (error: any) {
+        console.error("Etoile confirm error:", error);
+        res.status(500).json({ error: "確定処理中にエラーが発生しました: " + (error.message || "") });
+    }
 });
 
 // ==================================================

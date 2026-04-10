@@ -916,6 +916,8 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
   const [corecProductSelections, setCorecProductSelections] = useState<Map<number, number>>(new Map());
   // 商品マスタ一覧（ドロップダウン用）
   const [allProducts, setAllProducts] = useState<{ id: number; name: string }[]>([]);
+  // エトワール注文番号（重複防止用）
+  const [etoileOrderNumber, setEtoileOrderNumber] = useState<string>("");
 
   const currentSupplier = suppliers.find((s) => s.value === supplier)!;
 
@@ -955,6 +957,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
               if (res.ok) {
                 setMatchResults(data.results);
                 setSummary(data.summary);
+                setEtoileOrderNumber(data.orderNumber || "");
                 // エトワールは自動登録しないのでautoRegisterSetは空のまま
                 // 商品マスタをフェッチ（ドロップダウン用）
                 fetch("/api/products", { credentials: "include" })
@@ -1177,7 +1180,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ items: itemsForConfirm, mappings: etoileMappings }),
+          body: JSON.stringify({ items: itemsForConfirm, orderNumber: etoileOrderNumber, mappings: etoileMappings }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -1208,6 +1211,7 @@ const PurchaseImportTab = ({ toast }: { toast: any }) => {
     setEtoileProductSelections(new Map());
     setCorecProductSelections(new Map());
     setAllProducts([]);
+    setEtoileOrderNumber("");
   };
 
   return (
