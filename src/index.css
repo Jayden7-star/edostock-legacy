@@ -12,23 +12,23 @@
        Accent:  Medium Blue #4A90D9 (213 55% 55%)
        ═══════════════════════════════════════════════ */
  
-    --background: 40 20% 96%;
-    --foreground: 30 10% 18%;
+    --background: 220 14% 90%;
+    --foreground: 220 15% 15%;
 
-    --card: 40 15% 99%;
-    --card-foreground: 30 10% 18%;
+    --card: 220 10% 96%;
+    --card-foreground: 220 15% 15%;
 
-    --popover: 40 15% 99%;
-    --popover-foreground: 30 10% 18%;
+    --popover: 220 10% 96%;
+    --popover-foreground: 220 15% 15%;
 
     --primary: 213 40% 23%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 40 10% 93%;
-    --secondary-foreground: 30 10% 18%;
+    --secondary: 220 10% 86%;
+    --secondary-foreground: 220 15% 15%;
 
-    --muted: 40 10% 93%;
-    --muted-foreground: 30 5% 45%;
+    --muted: 220 10% 86%;
+    --muted-foreground: 220 8% 42%;
 
     --accent: 210 25% 58%;
     --accent-foreground: 0 0% 100%;
@@ -36,8 +36,8 @@
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
  
-    --border: 35 10% 85%;
-    --input: 35 10% 85%;
+    --border: 220 10% 80%;
+    --input: 220 10% 80%;
     --ring: 213 40% 23%;
  
     --radius: 0.5rem;
@@ -63,8 +63,8 @@
     --sidebar-ring: 213 40% 23%;
  
     /* Flat card (replaces glassmorphism) */
-    --glass-bg: 40 15% 99%;
-    --glass-border: 35 10% 85%;
+    --glass-bg: 220 10% 96%;
+    --glass-border: 220 10% 80%;
     --glass-blur: 0px;
   }
 }
@@ -136,12 +136,12 @@
  
 /* テーブル行ボーダー強化 */
 table tbody tr {
-  border-bottom: 1px solid hsl(35 10% 80%);
+  border-bottom: 1px solid hsl(220 10% 76%);
 }
 
 /* リストアイテムのボーダー強化 */
 .glass-card [class*="border-b"] {
-  border-color: hsl(35 10% 80%);
+  border-color: hsl(220 10% 76%);
 }
 
 @layer utilities {
