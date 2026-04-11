@@ -4,8 +4,8 @@ services:
     runtime: node
     region: singapore
     plan: starter
-    buildCommand: npm install --include=dev && npx vite build && npx prisma generate --schema=./prisma/schema.prisma && npx prisma db push --schema=./prisma/schema.prisma && npx tsx prisma/seed.ts
-    startCommand: NODE_ENV=production npx tsx server/index.ts
+    buildCommand: npm install --include=dev && npx vite build && npx prisma generate --schema=./prisma/schema.prisma
+    startCommand: npx prisma db push --schema=./prisma/schema.prisma && npx tsx prisma/seed.ts && NODE_ENV=production npx tsx server/index.ts
     disk:
       name: edostock-data
       mountPath: /opt/render/project/src/prisma
@@ -14,7 +14,7 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: DATABASE_URL
-        value: file:./production.db
+        value: file:/opt/render/project/src/prisma/production.db
       - key: SESSION_SECRET
         generateValue: true
       - key: NODE_ENV
