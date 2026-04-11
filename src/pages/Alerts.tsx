@@ -11,6 +11,7 @@ interface AlertItem {
   id: number;
   name: string;
   category: string;
+  department: string;
   currentStock: number;
   reorderPoint: number;
   optimalStock: number;
@@ -104,7 +105,7 @@ const Alerts = () => {
                 </div>
                 <div className="space-y-3 mt-4">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">在庫状況</span>
+                    <span className="text-muted-foreground">在庫状況{item.department === "APPAREL" ? ` (${new Date().getMonth() + 1}月)` : ""}</span>
                     <span className="font-num"><span className="font-semibold">{item.currentStock}</span> / {item.optimalStock}</span>
                   </div>
                   <div className="relative h-2 bg-secondary rounded-full overflow-hidden">

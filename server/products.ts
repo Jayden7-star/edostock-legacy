@@ -148,8 +148,25 @@ productsRouter.put("/bulk-stock", requireAdmin, async (req, res) => {
 // PUT /api/products/:id — 商品編集（管理者のみ）
 productsRouter.put("/:id", requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
-    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, color, size } = req.body;
+    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, color, size,
+        optimalStock01, optimalStock02, optimalStock03, optimalStock04, optimalStock05, optimalStock06,
+        optimalStock07, optimalStock08, optimalStock09, optimalStock10, optimalStock11, optimalStock12 } = req.body;
     try {
+        const monthlyData: Record<string, number> = {};
+        const monthlyFields = [
+            "optimalStock01", "optimalStock02", "optimalStock03", "optimalStock04",
+            "optimalStock05", "optimalStock06", "optimalStock07", "optimalStock08",
+            "optimalStock09", "optimalStock10", "optimalStock11", "optimalStock12",
+        ] as const;
+        const monthlyValues = [optimalStock01, optimalStock02, optimalStock03, optimalStock04,
+            optimalStock05, optimalStock06, optimalStock07, optimalStock08,
+            optimalStock09, optimalStock10, optimalStock11, optimalStock12];
+        monthlyFields.forEach((field, i) => {
+            if (monthlyValues[i] !== undefined) {
+                monthlyData[field] = parseInt(monthlyValues[i]) || 0;
+            }
+        });
+
         const product = await prisma.product.update({
             where: { id },
             data: {
@@ -163,6 +180,7 @@ productsRouter.put("/:id", requireAdmin, async (req, res) => {
                 ...(supplyType !== undefined && { supplyType }),
                 ...(color !== undefined && { color: color || null }),
                 ...(size !== undefined && { size: size || null }),
+                ...monthlyData,
             },
             include: { category: true },
         });

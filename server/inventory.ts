@@ -10,15 +10,35 @@ inventoryRouter.get("/alerts", async (req, res) => {
         where: { isActive: true, reorderPoint: { gt: 0 }, ...deptFilter },
         include: { category: true },
     });
+    // APPAREL商品は当月の月別適正在庫を使用（全て0ならfallback）
+    const currentMonth = new Date().getMonth() + 1; // 1-12
+    const monthlyField = `optimalStock${String(currentMonth).padStart(2, "0")}` as keyof typeof products[0];
+
+    const getOptimalStock = (p: typeof products[0]) => {
+        if (p.category.department === "APPAREL") {
+            const monthlyValue = (p as any)[monthlyField] as number;
+            if (monthlyValue > 0) return monthlyValue;
+            // 全月が0かチェック — いずれかが設定されていればその月は0として扱う
+            const anyMonthlySet = [
+                p.optimalStock01, p.optimalStock02, p.optimalStock03, p.optimalStock04,
+                p.optimalStock05, p.optimalStock06, p.optimalStock07, p.optimalStock08,
+                p.optimalStock09, p.optimalStock10, p.optimalStock11, p.optimalStock12,
+            ].some((v) => v > 0);
+            if (anyMonthlySet) return monthlyValue; // 当月は0
+        }
+        return p.optimalStock; // FOOD/GOODS or APPAREL fallback
+    };
+
     const alerts = products
         .filter((p) => p.currentStock <= p.reorderPoint)
         .map((p) => ({
             id: p.id,
             name: p.name,
             category: p.category.displayName,
+            department: p.category.department,
             currentStock: p.currentStock,
             reorderPoint: p.reorderPoint,
-            optimalStock: p.optimalStock,
+            optimalStock: getOptimalStock(p),
             severity:
                 p.currentStock <= 0
                     ? "critical"

@@ -13,6 +13,7 @@ interface Category {
   id: number;
   name: string;
   displayName: string;
+  department: string;
 }
 
 interface Product {
@@ -27,6 +28,18 @@ interface Product {
   sellingPrice: number;
   reorderPoint: number;
   optimalStock: number;
+  optimalStock01: number;
+  optimalStock02: number;
+  optimalStock03: number;
+  optimalStock04: number;
+  optimalStock05: number;
+  optimalStock06: number;
+  optimalStock07: number;
+  optimalStock08: number;
+  optimalStock09: number;
+  optimalStock10: number;
+  optimalStock11: number;
+  optimalStock12: number;
   supplyType: string;
 }
 
@@ -46,9 +59,14 @@ const supplyTypes = [
 
 const supplyLabel = (type: string) => supplyTypes.find((s) => s.value === type)?.label || type;
 
+const monthLabels = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
 const emptyForm = {
   janCode: "", name: "", categoryId: "", costPrice: "", sellingPrice: "",
   reorderPoint: "", optimalStock: "", supplyType: "PURCHASED", color: "", size: "",
+  optimalStock01: "", optimalStock02: "", optimalStock03: "", optimalStock04: "",
+  optimalStock05: "", optimalStock06: "", optimalStock07: "", optimalStock08: "",
+  optimalStock09: "", optimalStock10: "", optimalStock11: "", optimalStock12: "",
 };
 
 const ProductSettings = () => {
@@ -133,6 +151,18 @@ const ProductSettings = () => {
       supplyType: p.supplyType,
       color: p.color || "",
       size: p.size || "",
+      optimalStock01: String(p.optimalStock01 || 0),
+      optimalStock02: String(p.optimalStock02 || 0),
+      optimalStock03: String(p.optimalStock03 || 0),
+      optimalStock04: String(p.optimalStock04 || 0),
+      optimalStock05: String(p.optimalStock05 || 0),
+      optimalStock06: String(p.optimalStock06 || 0),
+      optimalStock07: String(p.optimalStock07 || 0),
+      optimalStock08: String(p.optimalStock08 || 0),
+      optimalStock09: String(p.optimalStock09 || 0),
+      optimalStock10: String(p.optimalStock10 || 0),
+      optimalStock11: String(p.optimalStock11 || 0),
+      optimalStock12: String(p.optimalStock12 || 0),
     });
     setModalOpen(true);
   };
@@ -395,7 +425,18 @@ const ProductSettings = () => {
                   <td className="py-3 px-4 text-right font-num">¥{p.costPrice.toLocaleString()}</td>
                   <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
                   <td className="py-3 px-4 text-right font-num">{p.reorderPoint}</td>
-                  <td className="py-3 px-4 text-right font-num">{p.optimalStock}</td>
+                  <td className="py-3 px-4 text-right font-num">
+                    {(() => {
+                      if (p.category.department === "APPAREL") {
+                        const month = new Date().getMonth() + 1;
+                        const key = `optimalStock${String(month).padStart(2, "0")}` as keyof Product;
+                        const monthlyVal = (p[key] as number) || 0;
+                        const anySet = [p.optimalStock01,p.optimalStock02,p.optimalStock03,p.optimalStock04,p.optimalStock05,p.optimalStock06,p.optimalStock07,p.optimalStock08,p.optimalStock09,p.optimalStock10,p.optimalStock11,p.optimalStock12].some(v => v > 0);
+                        if (anySet) return <span>{monthlyVal} <span className="text-[10px] text-muted-foreground">({month}月)</span></span>;
+                      }
+                      return p.optimalStock;
+                    })()}
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex justify-center gap-1">
                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => openEdit(p)}>
@@ -469,11 +510,31 @@ const ProductSettings = () => {
               <Input type="number" value={form.reorderPoint} onChange={(e) => updateField("reorderPoint", e.target.value)}
                 className="bg-secondary/50 border-border/50 h-10" />
             </div>
-            <div className="space-y-2">
-              <Label>適正在庫</Label>
-              <Input type="number" value={form.optimalStock} onChange={(e) => updateField("optimalStock", e.target.value)}
-                className="bg-secondary/50 border-border/50 h-10" />
-            </div>
+            {categories.find((c) => String(c.id) === form.categoryId)?.department !== "APPAREL" && (
+              <div className="space-y-2">
+                <Label>適正在庫</Label>
+                <Input type="number" value={form.optimalStock} onChange={(e) => updateField("optimalStock", e.target.value)}
+                  className="bg-secondary/50 border-border/50 h-10" />
+              </div>
+            )}
+            {categories.find((c) => String(c.id) === form.categoryId)?.department === "APPAREL" && (
+              <div className="col-span-2 space-y-2">
+                <Label>月別適正在庫</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {monthLabels.map((label, i) => {
+                    const field = `optimalStock${String(i + 1).padStart(2, "0")}` as keyof typeof form;
+                    return (
+                      <div key={field} className="space-y-1">
+                        <span className="text-[10px] text-muted-foreground">{label}</span>
+                        <Input type="number" value={form[field]} onChange={(e) => updateField(field, e.target.value)}
+                          className="bg-secondary/50 border-border/50 h-8 text-xs" />
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground">※ 全て0の場合は従来の適正在庫値を使用します</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>キャンセル</Button>
