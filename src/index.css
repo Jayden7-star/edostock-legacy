@@ -12,7 +12,7 @@
        Accent:  Medium Blue #4A90D9 (213 55% 55%)
        ═══════════════════════════════════════════════ */
  
-    --background: 210 20% 98%;
+    --background: 210 20% 96%;
     --foreground: 220 20% 20%;
  
     --card: 0 0% 100%;
@@ -53,13 +53,13 @@
     --edo-warning: 38 85% 52%;
     --edo-info: 213 55% 55%;
  
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 20% 30%;
-    --sidebar-primary: 213 40% 23%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 15% 95%;
-    --sidebar-accent-foreground: 220 20% 20%;
-    --sidebar-border: 214 15% 88%;
+    --sidebar-background: 213 40% 15%;
+    --sidebar-foreground: 210 15% 85%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 213 40% 15%;
+    --sidebar-accent: 213 35% 20%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 213 30% 20%;
     --sidebar-ring: 213 40% 23%;
  
     /* Flat card (replaces glassmorphism) */
@@ -98,9 +98,9 @@
     background: hsl(var(--glass-bg));
     border: 1px solid hsl(var(--glass-border));
     border-radius: var(--radius);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
- 
+
   .glass-card-hover {
     @apply glass-card transition-all duration-200;
   }

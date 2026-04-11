@@ -40,7 +40,7 @@ const KpiCard = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.4, ease: "easeOut" }}
-      className={cn("glass-card-hover p-5 lg:p-6", variantStyles[variant])}
+      className={cn("glass-card-hover p-5 lg:p-6 border-t-[3px] border-t-primary", variantStyles[variant])}
     >
       <div className="flex items-start justify-between mb-4">
         <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", iconBgStyles[variant])}>
