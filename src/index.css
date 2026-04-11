@@ -1,147 +1,150 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
-
+ 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
+ 
 @layer base {
   :root {
-    --background: 228 25% 12%;
-    --foreground: 0 0% 92%;
-
-    --card: 222 30% 14%;
-    --card-foreground: 0 0% 92%;
-
-    --popover: 222 30% 14%;
-    --popover-foreground: 0 0% 92%;
-
-    --primary: 348 78% 58%;
+    /* ═══════════════════════════════════════════════
+       EdoStock — McKinsey Clean Theme
+       Primary: Royal Blue #1B3A5C (213 40% 23%)
+       Accent:  Medium Blue #4A90D9 (213 55% 55%)
+       ═══════════════════════════════════════════════ */
+ 
+    --background: 210 20% 98%;
+    --foreground: 220 20% 20%;
+ 
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 20%;
+ 
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 20%;
+ 
+    --primary: 213 40% 23%;
     --primary-foreground: 0 0% 100%;
-
-    --secondary: 222 30% 18%;
-    --secondary-foreground: 0 0% 92%;
-
-    --muted: 222 20% 20%;
-    --muted-foreground: 220 10% 55%;
-
-    --accent: 28 45% 64%;
+ 
+    --secondary: 210 15% 95%;
+    --secondary-foreground: 220 20% 20%;
+ 
+    --muted: 210 15% 95%;
+    --muted-foreground: 215 10% 50%;
+ 
+    --accent: 213 55% 55%;
     --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84% 60%;
+ 
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
-    --border: 222 20% 22%;
-    --input: 222 20% 22%;
-    --ring: 348 78% 58%;
-
-    --radius: 0.75rem;
-
-    /* Custom EdoStock tokens */
-    --edo-navy: 228 25% 12%;
-    --edo-navy-light: 222 30% 14%;
-    --edo-navy-lighter: 222 30% 18%;
-    --edo-vermillion: 348 78% 58%;
-    --edo-gold: 28 45% 64%;
-    --edo-gold-dim: 28 30% 45%;
-    --edo-success: 152 60% 45%;
-    --edo-warning: 38 92% 60%;
-    --edo-info: 210 70% 55%;
-
-    --sidebar-background: 228 30% 10%;
-    --sidebar-foreground: 0 0% 80%;
-    --sidebar-primary: 348 78% 58%;
+ 
+    --border: 214 15% 88%;
+    --input: 214 15% 88%;
+    --ring: 213 40% 23%;
+ 
+    --radius: 0.5rem;
+ 
+    /* Custom EdoStock tokens — McKinsey palette */
+    --edo-navy: 213 40% 23%;
+    --edo-navy-light: 213 30% 30%;
+    --edo-navy-lighter: 210 15% 95%;
+    --edo-vermillion: 213 40% 23%;
+    --edo-gold: 213 55% 55%;
+    --edo-gold-dim: 215 10% 50%;
+    --edo-success: 152 55% 40%;
+    --edo-warning: 38 85% 52%;
+    --edo-info: 213 55% 55%;
+ 
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 30%;
+    --sidebar-primary: 213 40% 23%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 30% 16%;
-    --sidebar-accent-foreground: 0 0% 92%;
-    --sidebar-border: 222 20% 18%;
-    --sidebar-ring: 348 78% 58%;
-
-    /* Glassmorphism */
-    --glass-bg: 222 30% 14% / 0.6;
-    --glass-border: 222 20% 30% / 0.3;
-    --glass-blur: 16px;
+    --sidebar-accent: 210 15% 95%;
+    --sidebar-accent-foreground: 220 20% 20%;
+    --sidebar-border: 214 15% 88%;
+    --sidebar-ring: 213 40% 23%;
+ 
+    /* Flat card (replaces glassmorphism) */
+    --glass-bg: 0 0% 100%;
+    --glass-border: 214 15% 88%;
+    --glass-blur: 0px;
   }
 }
-
+ 
 @layer base {
   * {
     @apply border-border;
   }
-
+ 
   body {
     @apply bg-background text-foreground;
     font-family: 'Noto Sans JP', 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-
+ 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Noto Sans JP', sans-serif;
     font-weight: 600;
   }
-
+ 
   /* Numbers and English text */
   .font-num {
     font-family: 'Inter', sans-serif;
     font-variant-numeric: tabular-nums;
   }
 }
-
+ 
 @layer components {
   .glass-card {
     background: hsl(var(--glass-bg));
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid hsl(var(--glass-border));
     border-radius: var(--radius);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
-
+ 
   .glass-card-hover {
-    @apply glass-card transition-all duration-300;
+    @apply glass-card transition-all duration-200;
   }
   .glass-card-hover:hover {
-    border-color: hsl(var(--edo-vermillion) / 0.3);
-    box-shadow: 0 8px 32px hsl(var(--edo-vermillion) / 0.1);
-    transform: translateY(-2px);
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
   }
-
+ 
   .edo-gradient-text {
-    background: linear-gradient(135deg, hsl(var(--edo-vermillion)), hsl(var(--edo-gold)));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: hsl(var(--primary));
+    font-weight: 700;
   }
-
+ 
   .edo-gradient-bg {
-    background: linear-gradient(135deg, hsl(var(--edo-navy)) 0%, hsl(var(--edo-navy-light)) 100%);
+    background: hsl(var(--background));
   }
-
+ 
   .edo-glow-vermillion {
-    box-shadow: 0 0 20px hsl(var(--edo-vermillion) / 0.3), 0 0 60px hsl(var(--edo-vermillion) / 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
-
+ 
   .edo-glow-gold {
-    box-shadow: 0 0 20px hsl(var(--edo-gold) / 0.3), 0 0 60px hsl(var(--edo-gold) / 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
-
+ 
   .shimmer {
-    background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.1) 50%, hsl(var(--muted)) 75%);
+    background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
 }
-
+ 
 @layer utilities {
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
   }
-
+ 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
+    50% { transform: translateY(-4px); }
   }
-
+ 
   .animate-float {
     animation: float 3s ease-in-out infinite;
   }
