@@ -188,42 +188,45 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
         let totalQty = 0;
         let skippedCount = 0;
 
-        for (const item of items) {
-            const quantity = item.quantity || 0;
-            if (quantity <= 0) continue;
+        // P1-1: forループ全体を prisma.$transaction でラップ
+        await prisma.$transaction(async (tx) => {
+            for (const item of items) {
+                const quantity = item.quantity || 0;
+                if (quantity <= 0) continue;
 
-            let productId = item.matchedId;
+                let productId = item.matchedId;
 
-            // エトワールは新規商品登録しない（スマレジに先に登録が必要）
-            if (!productId) {
-                skippedCount++;
-                continue;
+                // エトワールは新規商品登録しない（スマレジに先に登録が必要）
+                if (!productId) {
+                    skippedCount++;
+                    continue;
+                }
+
+                const product = await tx.product.update({
+                    where: { id: productId },
+                    data: { currentStock: { increment: quantity } },
+                });
+
+                await tx.inventoryTransaction.create({
+                    data: {
+                        productId,
+                        type: "PURCHASE_CSV",
+                        quantity,
+                        stockAfter: product.currentStock,
+                        note: `仕入: エトワール海渡${orderNumber ? ` (${orderNumber})` : ""}${orderDate ? ` ${orderDate}` : ""}`,
+                        userId,
+                        csvImportId: csvImport.id,
+                    },
+                });
+
+                if (item.unitCost && item.unitCost > 0) {
+                    await tx.product.update({ where: { id: productId }, data: { costPrice: item.unitCost } });
+                }
+
+                addedCount++;
+                totalQty += quantity;
             }
-
-            const product = await prisma.product.update({
-                where: { id: productId },
-                data: { currentStock: { increment: quantity } },
-            });
-
-            await prisma.inventoryTransaction.create({
-                data: {
-                    productId,
-                    type: "PURCHASE_CSV",
-                    quantity,
-                    stockAfter: product.currentStock,
-                    note: `仕入: エトワール海渡${orderNumber ? ` (${orderNumber})` : ""}${orderDate ? ` ${orderDate}` : ""}`,
-                    userId,
-                    csvImportId: csvImport.id,
-                },
-            });
-
-            if (item.unitCost && item.unitCost > 0) {
-                await prisma.product.update({ where: { id: productId }, data: { costPrice: item.unitCost } });
-            }
-
-            addedCount++;
-            totalQty += quantity;
-        }
+        }, { timeout: 30000 });
 
         // SupplierProductMapping を upsert 保存
         if (Array.isArray(mappings)) {
@@ -501,6 +504,21 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
     }
 
     try {
+        // P1-2: 重複インポート防止チェック
+        if (filename) {
+            const existing = await prisma.csvImport.findFirst({
+                where: {
+                    filename: { contains: filename },
+                    csvType: "PURCHASE_COREC",
+                },
+            });
+            if (existing) {
+                return res.status(409).json({
+                    error: `このファイル（${filename}）は既にインポート済みです（${existing.importedAt.toLocaleDateString("ja-JP")}）`,
+                });
+            }
+        }
+
         const now = new Date();
 
         // CsvImport レコード作成
@@ -520,70 +538,73 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
         let skipped = 0;
         let newlyRegistered = 0;
 
-        for (const item of items) {
-            const quantity = item.quantity || 0;
-            if (quantity <= 0) {
-                skipped++;
-                continue;
-            }
+        // P1-1: forループ全体を prisma.$transaction でラップ
+        await prisma.$transaction(async (tx) => {
+            for (const item of items) {
+                const quantity = item.quantity || 0;
+                if (quantity <= 0) {
+                    skipped++;
+                    continue;
+                }
 
-            let productId = item.matchedProductId;
+                let productId = item.matchedProductId;
 
-            // Auto-register unmatched products
-            if (!productId && item.autoRegister) {
-                const categoryId = await getOrCreateDefaultCategory();
-                const janCode = item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                const newProduct = await prisma.product.upsert({
-                    where: { janCode },
-                    update: {},
-                    create: {
-                        name: item.productName || "不明な商品",
-                        janCode,
-                        categoryId,
-                        costPrice: item.unitPrice || 0,
-                        sellingPrice: 0,
-                        currentStock: 0,
-                        supplyType: "OEM",
+                // Auto-register unmatched products
+                if (!productId && item.autoRegister) {
+                    const categoryId = await getOrCreateDefaultCategory();
+                    const janCode = item.janCode || `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                    const newProduct = await tx.product.upsert({
+                        where: { janCode },
+                        update: {},
+                        create: {
+                            name: item.productName || "不明な商品",
+                            janCode,
+                            categoryId,
+                            costPrice: item.unitPrice || 0,
+                            sellingPrice: 0,
+                            currentStock: 0,
+                            supplyType: "OEM",
+                        },
+                    });
+                    productId = newProduct.id;
+                    newlyRegistered++;
+                }
+
+                if (!productId) {
+                    skipped++;
+                    continue;
+                }
+
+                // 在庫加算
+                const product = await tx.product.update({
+                    where: { id: productId },
+                    data: { currentStock: { increment: quantity } },
+                });
+
+                // InventoryTransaction 記録
+                await tx.inventoryTransaction.create({
+                    data: {
+                        productId,
+                        type: "PURCHASE_CSV",
+                        quantity,
+                        stockAfter: product.currentStock,
+                        note: `仕入: コレック COREC (${filename || "PDF"})`,
+                        userId,
+                        csvImportId: csvImport.id,
                     },
                 });
-                productId = newProduct.id;
-                newlyRegistered++;
+
+                // 原価更新
+                if (item.unitPrice && item.unitPrice > 0) {
+                    await tx.product.update({
+                        where: { id: productId },
+                        data: { costPrice: item.unitPrice },
+                    });
+                }
+
+                processed++;
             }
-
-            if (!productId) {
-                skipped++;
-                continue;
-            }
-
-            // 在庫加算
-            const product = await prisma.product.update({
-                where: { id: productId },
-                data: { currentStock: { increment: quantity } },
-            });
-
-            // InventoryTransaction 記録
-            await prisma.inventoryTransaction.create({
-                data: {
-                    productId,
-                    type: "PURCHASE_CSV",
-                    quantity,
-                    stockAfter: product.currentStock,
-                    note: `仕入: コレック COREC (${filename || "PDF"})`,
-                    userId,
-                    csvImportId: csvImport.id,
-                },
-            });
-
-            // 原価更新
-            if (item.unitPrice && item.unitPrice > 0) {
-                await prisma.product.update({
-                    where: { id: productId },
-                    data: { costPrice: item.unitPrice },
-                });
-            }
-
-            processed++;
-        }
+        }, { timeout: 30000 });
 
         // SupplierProductMapping を upsert 保存
         if (Array.isArray(mappings)) {
@@ -829,6 +850,21 @@ purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
     }
 
     try {
+        // P1-2: 重複インポート防止チェック
+        if (filename) {
+            const existing = await prisma.csvImport.findFirst({
+                where: {
+                    filename: { contains: filename },
+                    csvType: "PURCHASE_JANNU",
+                },
+            });
+            if (existing) {
+                return res.status(409).json({
+                    error: `このファイル（${filename}）は既にインポート済みです（${existing.importedAt.toLocaleDateString("ja-JP")}）`,
+                });
+            }
+        }
+
         const now = new Date();
 
         const csvImport = await prisma.csvImport.create({
@@ -847,63 +883,66 @@ purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
         let skipped = 0;
         let newlyRegistered = 0;
 
-        for (const item of items) {
-            const quantity = item.quantity || 0;
-            if (quantity <= 0) {
-                skipped++;
-                continue;
-            }
+        // P1-1: forループ全体を prisma.$transaction でラップ
+        await prisma.$transaction(async (tx) => {
+            for (const item of items) {
+                const quantity = item.quantity || 0;
+                if (quantity <= 0) {
+                    skipped++;
+                    continue;
+                }
 
-            let productId = item.matchedProductId;
+                let productId = item.matchedProductId;
 
-            // Auto-register unmatched products
-            if (!productId && item.autoRegister) {
-                const categoryId = await getOrCreateDefaultCategory();
-                const productName = [item.design, item.color, item.size].filter(Boolean).join(" ");
-                const janCode = `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                const newProduct = await prisma.product.upsert({
-                    where: { janCode },
-                    update: {},
-                    create: {
-                        name: productName || "不明な商品",
-                        janCode,
-                        categoryId,
-                        costPrice: 0,
-                        sellingPrice: 0,
-                        currentStock: 0,
-                        color: item.color || null,
-                        size: item.size || null,
-                        supplyType: "OEM",
+                // Auto-register unmatched products
+                if (!productId && item.autoRegister) {
+                    const categoryId = await getOrCreateDefaultCategory();
+                    const productName = [item.design, item.color, item.size].filter(Boolean).join(" ");
+                    const janCode = `AUTO_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                    const newProduct = await tx.product.upsert({
+                        where: { janCode },
+                        update: {},
+                        create: {
+                            name: productName || "不明な商品",
+                            janCode,
+                            categoryId,
+                            costPrice: 0,
+                            sellingPrice: 0,
+                            currentStock: 0,
+                            color: item.color || null,
+                            size: item.size || null,
+                            supplyType: "OEM",
+                        },
+                    });
+                    productId = newProduct.id;
+                    newlyRegistered++;
+                }
+
+                if (!productId) {
+                    skipped++;
+                    continue;
+                }
+
+                const product = await tx.product.update({
+                    where: { id: productId },
+                    data: { currentStock: { increment: quantity } },
+                });
+
+                await tx.inventoryTransaction.create({
+                    data: {
+                        productId,
+                        type: "PURCHASE_CSV",
+                        quantity,
+                        stockAfter: product.currentStock,
+                        note: `仕入: ジャヌツー (${filename || "Excel"})`,
+                        userId,
+                        csvImportId: csvImport.id,
                     },
                 });
-                productId = newProduct.id;
-                newlyRegistered++;
+
+                processed++;
             }
-
-            if (!productId) {
-                skipped++;
-                continue;
-            }
-
-            const product = await prisma.product.update({
-                where: { id: productId },
-                data: { currentStock: { increment: quantity } },
-            });
-
-            await prisma.inventoryTransaction.create({
-                data: {
-                    productId,
-                    type: "PURCHASE_CSV",
-                    quantity,
-                    stockAfter: product.currentStock,
-                    note: `仕入: ジャヌツー (${filename || "Excel"})`,
-                    userId,
-                    csvImportId: csvImport.id,
-                },
-            });
-
-            processed++;
-        }
+        }, { timeout: 30000 });
 
         // SupplierProductMapping を upsert 保存（次回以降の自動マッチングに使用）
         if (Array.isArray(mappings)) {

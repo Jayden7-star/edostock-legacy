@@ -24,6 +24,8 @@ csvRouter.post("/", async (req, res) => {
                 },
             });
 
+            // P1-1: forループ全体を prisma.$transaction でラップ
+            await prisma.$transaction(async (tx) => {
             for (const record of records) {
                 const janCode = record["商品コード"]?.trim();
                 const productName = record["商品名"]?.trim() || "";
@@ -38,7 +40,7 @@ csvRouter.post("/", async (req, res) => {
 
                     const recordType = amount < 0 ? "DISCOUNT" : "SET_ITEM";
                     const transactionDate = record["取引日時"]?.trim();
-                    await prisma.discountRecord.create({
+                    await tx.discountRecord.create({
                         data: {
                             csvImportId: csvImport.id,
                             recordType,
@@ -56,24 +58,24 @@ csvRouter.post("/", async (req, res) => {
                 const netSales = parseInt(record["値引き後計"]) || 0;
                 const categoryName = record["部門名"]?.trim() || "";
 
-                let product = await prisma.product.findUnique({ where: { janCode } });
+                let product = await tx.product.findUnique({ where: { janCode } });
                 if (!product) {
                     const override = overrideMap.get(janCode);
                     if (override) {
                         // 手動マッチング: 既存商品のJAN・名前をスマレジのデータに更新
-                        product = await prisma.product.update({
+                        product = await tx.product.update({
                             where: { id: override.existingProductId },
                             data: { janCode, name: override.csvProductName },
                         });
                     } else {
                         // 新規商品として登録（従来通り）
-                        let category = await prisma.category.findUnique({ where: { name: categoryName } });
+                        let category = await tx.category.findUnique({ where: { name: categoryName } });
                         if (!category) {
-                            category = await prisma.category.create({
+                            category = await tx.category.create({
                                 data: { name: categoryName, displayName: categoryName.replace("☆　", ""), isFood: !categoryName.startsWith("☆"), displayOrder: 99 },
                             });
                         }
-                        product = await prisma.product.create({
+                        product = await tx.product.create({
                             data: {
                                 janCode, name: productName, categoryId: category.id,
                                 color: record["カラー"]?.trim() || null, size: record["サイズ"]?.trim() || null,
@@ -83,18 +85,34 @@ csvRouter.post("/", async (req, res) => {
                     }
                 }
 
-                await prisma.salesRecord.create({
+                await tx.salesRecord.create({
                     data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
                 });
 
                 // 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
                 if (product.currentStock !== null) {
-                    await prisma.product.update({
+                    // P0-2: マイナス在庫ガード
+                    const newStock = Math.max(0, product.currentStock - quantitySold);
+                    const updatedProduct = await tx.product.update({
                         where: { id: product.id },
-                        data: { currentStock: { decrement: quantitySold } },
+                        data: { currentStock: newStock },
+                    });
+
+                    // P0-1: InventoryTransaction 作成
+                    await tx.inventoryTransaction.create({
+                        data: {
+                            productId: product.id,
+                            type: "SALE_CSV",
+                            quantity: quantitySold,
+                            stockAfter: newStock,
+                            note: `売上CSV: ${csvImport.filename || filename}`,
+                            csvImportId: csvImport.id,
+                            userId,
+                        },
                     });
                 }
             }
+            }, { timeout: 30000 });
 
             return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
         }
