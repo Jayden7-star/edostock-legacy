@@ -269,14 +269,23 @@ function normalizeJan(raw: string): string {
 
 async function extractPdfText(buffer: Buffer): Promise<string[]> {
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    const result = await parser.getText();
-    // Split by page: TextResult has pages array, each with .text
-    if (result.pages && result.pages.length > 0) {
-        return result.pages.map((p: any) => p.text).filter((t: string) => t.trim().length > 0);
+    try {
+        const result = await parser.getText();
+        // Split by page: TextResult has pages array, each with .text
+        if (result && result.pages && result.pages.length > 0) {
+            const pageTexts = result.pages.map((p: any) => p.text).filter((t: string) => t.trim().length > 0);
+            if (pageTexts.length > 0) return pageTexts;
+        }
+        // Fallback: use the full text, split by form-feed
+        if (result && result.text) {
+            const pages = result.text.split('\f').filter((p: string) => p.trim().length > 0);
+            if (pages.length > 0) return pages;
+            return [result.text];
+        }
+        throw new Error("PDF解析結果が空です: getText()が有効なテキスト結果を返しませんでした");
+    } finally {
+        await parser.destroy();
     }
-    // Fallback: use the full text, split by form-feed
-    const pages = result.text.split('\f').filter((p: string) => p.trim().length > 0);
-    return pages.length > 0 ? pages : [result.text];
 }
 
 function parseCorecLines(pageTexts: string[]) {
@@ -394,15 +403,25 @@ async function parseCorecPDF(buffer: Buffer): Promise<Array<{
     hinban: string; productName: string; janCode: string;
     quantity: number; unitPrice: number;
 }>> {
-    const pageTexts = await extractPdfText(buffer);
-    const lines = parseCorecLines(pageTexts);
-    return lines.map((l) => ({
-        hinban: l.hinban,
-        productName: l.productName,
-        janCode: l.janCode,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-    }));
+    try {
+        if (!buffer || buffer.length === 0) {
+            throw new Error("PDFバッファが空または無効です");
+        }
+        const pageTexts = await extractPdfText(buffer);
+        if (!pageTexts || pageTexts.length === 0) {
+            throw new Error("PDFテキスト抽出結果が空です");
+        }
+        const lines = parseCorecLines(pageTexts);
+        return lines.map((l) => ({
+            hinban: l.hinban,
+            productName: l.productName,
+            janCode: l.janCode,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+        }));
+    } catch (error) {
+        throw new Error(`COREC PDF パース失敗: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
 purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any, res) => {
@@ -414,11 +433,17 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
         const parsed = await parseCorecPDF(req.file.buffer);
 
         if (parsed.length === 0) {
-            const pageTexts = await extractPdfText(req.file.buffer);
-            return res.status(400).json({
-                error: "PDFから商品データを抽出できませんでした",
-                rawText: pageTexts.join("\n").substring(0, 500),
-            });
+            try {
+                const pageTexts = await extractPdfText(req.file.buffer);
+                return res.status(400).json({
+                    error: "PDFから商品データを抽出できませんでした",
+                    rawText: pageTexts.join("\n").substring(0, 500),
+                });
+            } catch (textError: any) {
+                return res.status(400).json({
+                    error: "PDFテキスト抽出失敗: " + (textError instanceof Error ? textError.message : String(textError)),
+                });
+            }
         }
 
         // マッチング処理してプレビュー用データを生成
@@ -491,8 +516,12 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
 
         res.json({ items });
     } catch (error: any) {
-        console.error("COREC parse error:", error);
-        res.status(500).json({ error: "PDF解析中にエラーが発生しました: " + (error.message || "") });
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error("COREC parse error:", errorMsg);
+        res.status(500).json({
+            error: "PDF解析処理に失敗しました: " + errorMsg,
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined
+        });
     }
 });
 
