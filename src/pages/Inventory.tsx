@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Search, Filter, Package, Plus, Pencil, EyeOff } from "lucide-react";
+import { Search, Filter, Package, Plus, Pencil, EyeOff, List, LayoutGrid, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,8 @@ interface Product {
   id: number;
   name: string;
   janCode: string;
+  color: string | null;
+  size: string | null;
   category: { displayName: string } | null;
   currentStock: number;
   reorderPoint: number;
@@ -22,6 +24,10 @@ interface Product {
   sellingPrice: number;
   costPrice: number;
 }
+
+type ViewMode = "list" | "grid";
+
+const STORAGE_KEY = "edostock-inventory-view";
 
 const stockStatuses = ["すべて", "在庫切れ", "発注点以下", "十分"];
 
@@ -54,6 +60,9 @@ const Inventory = () => {
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    return (localStorage.getItem(STORAGE_KEY) as ViewMode) || "list";
+  });
   const { toast } = useToast();
   const scrollYRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
@@ -105,6 +114,11 @@ const Inventory = () => {
       (stockFilter === "十分" && status === "sufficient");
     return matchSearch && matchCat && matchStatus;
   });
+
+  const toggleViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem(STORAGE_KEY, mode);
+  };
 
   const grossMargin = (p: Product) =>
     p.costPrice > 0 ? (((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100).toFixed(1) : "—";
@@ -217,103 +231,235 @@ const Inventory = () => {
             ))}
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-1 ml-auto bg-secondary/50 rounded-lg p-1 border border-border/50">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "h-8 w-8 p-0",
+              viewMode === "list" && "bg-primary/20 text-primary"
+            )}
+            onClick={() => toggleViewMode("list")}
+            title="リスト表示"
+          >
+            <List className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "h-8 w-8 p-0",
+              viewMode === "grid" && "bg-primary/20 text-primary"
+            )}
+            onClick={() => toggleViewMode("grid")}
+            title="ブロック表示"
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </Button>
+        </div>
       </motion.div>
 
-      {/* テーブル */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="glass-card overflow-hidden"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="text-left py-3 px-4 font-medium">状態</th>
-                <th className="text-left py-3 px-4 font-medium">商品名</th>
-                <th className="text-left py-3 px-4 font-medium">部門</th>
-                <th className="text-right py-3 px-4 font-medium">現在庫</th>
-                <th className="text-right py-3 px-4 font-medium">発注点</th>
-                <th className="text-right py-3 px-4 font-medium">適正在庫</th>
-                <th className="text-right py-3 px-4 font-medium">売価</th>
-                <th className="text-right py-3 px-4 font-medium">原価</th>
-                <th className="text-right py-3 px-4 font-medium">粗利率</th>
-                <th className="text-center py-3 px-4 font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
+      {/* リスト表示 */}
+      {viewMode === "list" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="glass-card overflow-hidden"
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/50 text-muted-foreground">
+                  <th className="text-left py-3 px-4 font-medium">状態</th>
+                  <th className="text-left py-3 px-4 font-medium">商品名</th>
+                  <th className="text-left py-3 px-4 font-medium">部門</th>
+                  <th className="text-right py-3 px-4 font-medium">現在庫</th>
+                  <th className="text-right py-3 px-4 font-medium">発注点</th>
+                  <th className="text-right py-3 px-4 font-medium">適正在庫</th>
+                  <th className="text-right py-3 px-4 font-medium">売価</th>
+                  <th className="text-right py-3 px-4 font-medium">原価</th>
+                  <th className="text-right py-3 px-4 font-medium">粗利率</th>
+                  <th className="text-center py-3 px-4 font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p, i) => {
+                  const status = getStockStatus(p);
+                  const cfg = statusConfig[status];
+                  return (
+                    <motion.tr
+                      key={p.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.03 }}
+                      className="border-b border-border/30 hover:bg-secondary/30 transition-colors"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className={cn("w-2 h-2 rounded-full", cfg.dot)} />
+                          <span className={cn("text-xs", cfg.bg)}>{cfg.label}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-medium">{p.name}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant="outline" className="text-xs border-border/50">{getCategoryName(p)}</Badge>
+                      </td>
+                      <td className={cn("py-3 px-4 text-right font-num font-semibold", cfg.bg)}>{p.currentStock}</td>
+                      <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
+                      <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.optimalStock}</td>
+                      <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right font-num text-muted-foreground">¥{p.costPrice.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
+                            onClick={() => openModal(p, "purchase")}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => openModal(p, "adjust")}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
+                            onClick={() => handleDeactivate(p)}
+                            title="非表示"
+                          >
+                            <EyeOff className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+                {filtered.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-muted-foreground">
+                      <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>該当する商品がありません</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ブロック表示 */}
+      {viewMode === "grid" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          {filtered.length === 0 && !loading ? (
+            <div className="glass-card py-12 text-center text-muted-foreground">
+              <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>該当する商品がありません</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-4">
               {filtered.map((p, i) => {
                 const status = getStockStatus(p);
                 const cfg = statusConfig[status];
+                const isLowStock = p.currentStock <= 5;
                 return (
-                  <motion.tr
+                  <motion.div
                     key={p.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.03 }}
-                    className="border-b border-border/30 hover:bg-secondary/30 transition-colors"
+                    className={cn(
+                      "glass-card-hover p-4 flex flex-col gap-3",
+                      isLowStock && "border-edo-warning/50"
+                    )}
                   >
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className={cn("w-2 h-2 rounded-full", cfg.dot)} />
-                        <span className={cn("text-xs", cfg.bg)}>{cfg.label}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-medium">{p.name}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant="outline" className="text-xs border-border/50">{getCategoryName(p)}</Badge>
-                    </td>
-                    <td className={cn("py-3 px-4 text-right font-num font-semibold", cfg.bg)}>{p.currentStock}</td>
-                    <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
-                    <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.optimalStock}</td>
-                    <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-right font-num text-muted-foreground">¥{p.costPrice.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
-                          onClick={() => openModal(p, "purchase")}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => openModal(p, "adjust")}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
-                          onClick={() => handleDeactivate(p)}
-                          title="非表示"
-                        >
-                          <EyeOff className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </motion.tr>
+                    {/* ヘッダー: 商品名 + ステータス */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-semibold leading-tight line-clamp-2 flex-1">{p.name}</h3>
+                      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", cfg.dot)} title={cfg.label} />
+                    </div>
+
+                    {/* カラー・サイズ */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {p.color && (
+                        <Badge variant="outline" className="text-xs border-border/50 px-2 py-0">{p.color}</Badge>
+                      )}
+                      {p.size && (
+                        <Badge variant="outline" className="text-xs border-border/50 px-2 py-0">{p.size}</Badge>
+                      )}
+                    </div>
+
+                    {/* 在庫数 */}
+                    <div className={cn(
+                      "flex items-center gap-2 rounded-lg px-3 py-2",
+                      isLowStock ? "bg-edo-warning/10" : "bg-secondary/50"
+                    )}>
+                      {isLowStock && <AlertTriangle className="w-3.5 h-3.5 text-edo-warning shrink-0" />}
+                      <span className="text-xs text-muted-foreground">在庫</span>
+                      <span className={cn(
+                        "ml-auto text-lg font-bold font-num",
+                        isLowStock ? "text-edo-warning" : cfg.bg
+                      )}>
+                        {p.currentStock}
+                      </span>
+                    </div>
+
+                    {/* 売価 */}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">売価</span>
+                      <span className="font-num font-semibold">¥{p.sellingPrice.toLocaleString()}</span>
+                    </div>
+
+                    {/* 操作ボタン */}
+                    <div className="flex items-center justify-end gap-1 mt-auto pt-2 border-t border-border/30">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-edo-success hover:text-edo-success hover:bg-edo-success/10"
+                        onClick={() => openModal(p, "purchase")}
+                        title="入庫"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => openModal(p, "adjust")}
+                        title="調整"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
+                        onClick={() => handleDeactivate(p)}
+                        title="非表示"
+                      >
+                        <EyeOff className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </motion.div>
                 );
               })}
-              {filtered.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={10} className="py-12 text-center text-muted-foreground">
-                    <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>該当する商品がありません</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* 入庫/調整モーダル */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
