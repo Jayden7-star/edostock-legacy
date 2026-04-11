@@ -134,6 +134,16 @@
   }
 }
  
+/* テーブル行ボーダー強化 */
+table tbody tr {
+  border-bottom: 1px solid hsl(214 15% 82%);
+}
+
+/* リストアイテムのボーダー強化 */
+.glass-card [class*="border-b"] {
+  border-color: hsl(214 15% 82%);
+}
+
 @layer utilities {
   @keyframes shimmer {
     0% { background-position: -200% 0; }
