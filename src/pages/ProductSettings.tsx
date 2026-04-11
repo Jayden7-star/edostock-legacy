@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Search, Plus, Pencil, Trash2, Package } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Package, Link2, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,14 @@ interface Product {
   supplyType: string;
 }
 
+interface SupplierMapping {
+  id: number;
+  supplierName: string;
+  supplierProductName: string;
+  productId: number;
+  product: { id: number; name: string; janCode: string };
+}
+
 const supplyTypes = [
   { value: "SELF_MANUFACTURED", label: "自社製造" },
   { value: "PURCHASED", label: "仕入商品" },
@@ -57,6 +65,11 @@ const ProductSettings = () => {
   const [bulkField, setBulkField] = useState<string>("");
   const [bulkValue, setBulkValue] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [mappings, setMappings] = useState<SupplierMapping[]>([]);
+  const [mappingsOpen, setMappingsOpen] = useState(false);
+  const [mappingSupplierFilter, setMappingSupplierFilter] = useState("ALL");
+  const [editingMappingId, setEditingMappingId] = useState<number | null>(null);
+  const [editingMappingProductId, setEditingMappingProductId] = useState<string>("");
   const { toast } = useToast();
   const scrollYRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
@@ -70,6 +83,14 @@ const ProductSettings = () => {
       .finally(() => setLoading(false));
   }, [toast]);
 
+  const fetchMappings = useCallback(() => {
+    const query = mappingSupplierFilter !== "ALL" ? `?supplier=${mappingSupplierFilter}` : "";
+    fetch(`/api/supplier-mappings${query}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then(setMappings)
+      .catch(() => {});
+  }, [mappingSupplierFilter]);
+
   useEffect(() => {
     fetchProducts();
     fetch("/api/products/categories", { credentials: "include" })
@@ -77,6 +98,10 @@ const ProductSettings = () => {
       .then(setCategories)
       .catch(() => { });
   }, [fetchProducts]);
+
+  useEffect(() => {
+    if (mappingsOpen) fetchMappings();
+  }, [mappingsOpen, fetchMappings]);
 
   useEffect(() => {
     if (shouldRestoreScrollRef.current) {
@@ -246,6 +271,45 @@ const ProductSettings = () => {
       toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
     } finally {
       setBulkSubmitting(false);
+    }
+  };
+
+  const handleDeleteMapping = async (m: SupplierMapping) => {
+    if (!confirm(`「${m.supplierName} / ${m.supplierProductName}」のマッピングを削除しますか？`)) return;
+    try {
+      const res = await fetch(`/api/supplier-mappings/${m.id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        toast({ title: "削除完了", description: "マッピングを削除しました" });
+        fetchMappings();
+      } else {
+        const data = await res.json();
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateMapping = async (mappingId: number) => {
+    if (!editingMappingProductId) return;
+    try {
+      const res = await fetch(`/api/supplier-mappings/${mappingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ productId: parseInt(editingMappingProductId) }),
+      });
+      if (res.ok) {
+        toast({ title: "更新完了", description: "紐づけ先を変更しました" });
+        setEditingMappingId(null);
+        setEditingMappingProductId("");
+        fetchMappings();
+      } else {
+        const data = await res.json();
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
     }
   };
 
@@ -504,6 +568,111 @@ const ProductSettings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 仕入先マッピング管理 */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-secondary/30 transition-colors"
+          onClick={() => setMappingsOpen(!mappingsOpen)}
+        >
+          <div className="flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-primary" />
+            <span className="font-medium text-sm">仕入先マッピング管理</span>
+            {mappings.length > 0 && <Badge variant="outline" className="text-xs ml-1">{mappings.length}件</Badge>}
+          </div>
+          {mappingsOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </button>
+
+        {mappingsOpen && (
+          <div className="border-t border-border/50">
+            <div className="px-5 py-3 flex items-center gap-3 border-b border-border/30">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">仕入先</Label>
+              <Select value={mappingSupplierFilter} onValueChange={setMappingSupplierFilter}>
+                <SelectTrigger className="bg-secondary/50 border-border/50 h-8 w-40 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">すべて</SelectItem>
+                  <SelectItem value="ETOILE">ETOILE</SelectItem>
+                  <SelectItem value="COREC">COREC</SelectItem>
+                  <SelectItem value="JANNU">JANNU</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground">
+                    <th className="text-left py-2.5 px-4 font-medium text-xs">仕入先</th>
+                    <th className="text-left py-2.5 px-4 font-medium text-xs">仕入先商品名</th>
+                    <th className="text-left py-2.5 px-4 font-medium text-xs">紐づけ先商品</th>
+                    <th className="text-center py-2.5 px-4 font-medium text-xs w-32">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappings.map((m) => (
+                    <tr key={m.id} className="border-b border-border/30 hover:bg-secondary/30 transition-colors">
+                      <td className="py-2.5 px-4">
+                        <Badge variant="outline" className="text-xs">{m.supplierName}</Badge>
+                      </td>
+                      <td className="py-2.5 px-4 text-xs">{m.supplierProductName}</td>
+                      <td className="py-2.5 px-4">
+                        {editingMappingId === m.id ? (
+                          <Select value={editingMappingProductId} onValueChange={setEditingMappingProductId}>
+                            <SelectTrigger className="bg-secondary/50 border-border/50 h-8 text-xs">
+                              <SelectValue placeholder="商品を選択" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={String(p.id)}>
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs font-medium">{m.product.name}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex justify-center gap-1">
+                          {editingMappingId === m.id ? (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => handleUpdateMapping(m.id)}>
+                                保存
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setEditingMappingId(null); setEditingMappingProductId(""); }}>
+                                取消
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditingMappingId(m.id); setEditingMappingProductId(String(m.productId)); }}>
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteMapping(m)}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {mappings.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-muted-foreground text-xs">
+                        マッピングが登録されていません
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 };

@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 import { PrismaClient } from "@prisma/client";
 import { authRouter } from "./auth";
 import { analyticsRouter } from "./analytics";
-import { productsRouter } from "./products";
+import { productsRouter, supplierMappingsRouter } from "./products";
 import { inventoryRouter } from "./inventory";
 import { csvRouter } from "./csv";
 import { stocktakesRouter } from "./stocktakes";
@@ -96,6 +96,7 @@ app.use("/api/csv", requireAdmin, csvRouter);
 app.use("/api/stocktakes", requireAuth, stocktakesRouter);
 app.use("/api/purchase-import", requireAdmin, purchaseImportRouter);
 app.use("/api/smaregi", requireAdmin, smaregiRouter);
+app.use("/api/supplier-mappings", requireAuth, supplierMappingsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

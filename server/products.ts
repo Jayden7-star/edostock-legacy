@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma, requireAdmin } from "./index";
 
 export const productsRouter = Router();
+export const supplierMappingsRouter = Router();
 
 productsRouter.get("/", async (req, res) => {
     const search = req.query.search as string | undefined;
@@ -181,5 +182,54 @@ productsRouter.delete("/:id", requireAdmin, async (req, res) => {
     } catch (error: any) {
         if (error.code === "P2025") return res.status(404).json({ error: "商品が見つかりません" });
         res.status(500).json({ error: error.message || "商品の削除に失敗しました" });
+    }
+});
+
+// ========== SupplierProductMapping API ==========
+
+// GET /api/supplier-mappings — マッピング一覧（?supplier= でフィルタ可能）
+supplierMappingsRouter.get("/", async (req, res) => {
+    const supplier = req.query.supplier as string | undefined;
+    try {
+        const mappings = await prisma.supplierProductMapping.findMany({
+            where: supplier ? { supplierName: supplier } : {},
+            include: { product: { select: { id: true, name: true, janCode: true } } },
+            orderBy: [{ supplierName: "asc" }, { supplierProductName: "asc" }],
+        });
+        res.json(mappings);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "マッピングの取得に失敗しました" });
+    }
+});
+
+// PUT /api/supplier-mappings/:id — 紐づけ先の変更（管理者のみ）
+supplierMappingsRouter.put("/:id", requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { productId } = req.body;
+    if (!productId) {
+        return res.status(400).json({ error: "紐づけ先の商品IDは必須です" });
+    }
+    try {
+        const mapping = await prisma.supplierProductMapping.update({
+            where: { id },
+            data: { productId: parseInt(productId) },
+            include: { product: { select: { id: true, name: true, janCode: true } } },
+        });
+        res.json(mapping);
+    } catch (error: any) {
+        if (error.code === "P2025") return res.status(404).json({ error: "マッピングが見つかりません" });
+        res.status(500).json({ error: error.message || "マッピングの更新に失敗しました" });
+    }
+});
+
+// DELETE /api/supplier-mappings/:id — マッピング削除（管理者のみ）
+supplierMappingsRouter.delete("/:id", requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id);
+    try {
+        await prisma.supplierProductMapping.delete({ where: { id } });
+        res.json({ success: true });
+    } catch (error: any) {
+        if (error.code === "P2025") return res.status(404).json({ error: "マッピングが見つかりません" });
+        res.status(500).json({ error: error.message || "マッピングの削除に失敗しました" });
     }
 });
