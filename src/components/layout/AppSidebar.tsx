@@ -161,7 +161,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
                           className={cn(
                             "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all",
                             isActive(child.path)
-                              ? "text-primary bg-primary/10 border-l-2 border-primary"
+                              ? "bg-primary text-white font-medium"
                               : "text-sidebar-foreground hover:bg-sidebar-accent/50"
                           )}
                         >
@@ -183,7 +183,7 @@ const AppSidebar = ({ collapsed, onToggle }: AppSidebarProps) => {
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
                 isActive(item.path)
-                  ? "text-primary bg-primary/10 border-l-2 border-primary font-medium"
+                  ? "bg-primary text-white font-medium"
                   : "text-sidebar-foreground hover:bg-sidebar-accent/50"
               )}
             >

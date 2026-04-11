@@ -59,9 +59,9 @@ const AppHeader = ({ user }: AppHeaderProps) => {
   };
 
   return (
-    <header className="h-16 border-b border-border bg-background/80 backdrop-blur-sm flex items-center justify-between px-6 lg:px-8">
+    <header className="h-16 border-b border-border bg-white shadow-sm flex items-center justify-between px-6 lg:px-8">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold tracking-wide">{title}</h1>
+        <h1 className="text-lg font-semibold tracking-wide text-primary">{title}</h1>
         {modeLabel && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25 font-medium">
             {modeLabel}

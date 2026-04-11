@@ -67,8 +67,8 @@ const SalesChart = ({ data }: SalesChartProps) => {
           <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="hsl(348, 78%, 58%)" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="hsl(348, 78%, 58%)" stopOpacity={0} />
+                <stop offset="0%" stopColor="#1B3A5C" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#1B3A5C" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 20%)" />
@@ -89,11 +89,11 @@ const SalesChart = ({ data }: SalesChartProps) => {
             <Area
               type="monotone"
               dataKey="sales"
-              stroke="hsl(348, 78%, 58%)"
+              stroke="#1B3A5C"
               strokeWidth={2.5}
               fill="url(#salesGradient)"
               dot={false}
-              activeDot={{ r: 5, fill: "hsl(348, 78%, 58%)", stroke: "hsl(228, 25%, 12%)", strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: "#1B3A5C", stroke: "hsl(228, 25%, 12%)", strokeWidth: 2 }}
             />
           </AreaChart>
         </ResponsiveContainer>

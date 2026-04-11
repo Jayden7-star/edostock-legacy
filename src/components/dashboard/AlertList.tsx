@@ -26,8 +26,8 @@ function getSeverity(item: AlertItem): "critical" | "warning" | "low" {
 }
 
 const severityStyles = {
-  critical: "bg-primary/15 text-primary border-primary/30",
-  warning: "bg-edo-warning/15 text-edo-warning border-edo-warning/30",
+  critical: "bg-primary/15 text-primary border-primary/30 border-l-[3px] border-l-destructive",
+  warning: "bg-edo-warning/15 text-edo-warning border-edo-warning/30 border-l-[3px] border-l-edo-warning",
   low: "bg-edo-info/15 text-edo-info border-edo-info/30",
 };
 
