@@ -110,6 +110,9 @@ edostock-legacy/
 | `/api/smaregi/sync-logs` | GET | ADMIN | 同期ログ |
 | `/api/supplier-mappings` | GET | AUTH | マッピング一覧 |
 | `/api/supplier-mappings/:id` | PUT/DELETE | ADMIN | マッピング編集/削除 |
+| `/api/optimal-stock/calculate` | POST | AUTH | 適正在庫を計算してDB保存 |
+| `/api/optimal-stock/:productId` | GET | AUTH | 商品別の月別適正在庫取得 |
+| `/api/optimal-stock/month/:year/:month` | GET | AUTH | 特定月の全商品適正在庫一覧 |
 | `/api/health` | GET | - | ヘルスチェック |
 
 ## DBスキーマ (主要テーブル)
@@ -124,6 +127,7 @@ edostock-legacy/
 - **monthly_sales** — 月次売上サマリー (Smaregi形式の月別売上CSVから)
 - **stocktakes** / **inventory_counts** — 棚卸し。status: IN_PROGRESS → COMPLETED
 - **supplier_product_mappings** — 仕入先商品名 → 自社商品の紐づけ (supplierName: ETOILE / COREC / JANNU)
+- **monthly_optimal_stock** — 月別適正在庫。product_id + year + month でユニーク。avg_daily_sales (過去平均日販)、safety_factor (安全係数)、optimal_stock (= avg_daily_sales × 月日数 × safety_factor)
 - **smaregi_configs** — スマレジAPI設定 (contractId, clientId, clientSecret, accessToken)
 - **smaregi_sync_logs** — 同期ログ
 - **activity_logs** — 操作ログ

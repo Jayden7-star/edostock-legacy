@@ -92,20 +92,28 @@ csvRouter.post("/", async (req, res) => {
                 // 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
                 if (product.currentStock !== null) {
                     // P0-2: マイナス在庫ガード
-                    const newStock = Math.max(0, product.currentStock - quantitySold);
-                    const updatedProduct = await tx.product.update({
+                    const rawStock = product.currentStock - quantitySold;
+                    const clamped = rawStock < 0;
+                    const newStock = Math.max(0, rawStock);
+
+                    if (clamped) {
+                        console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
+                    }
+
+                    await tx.product.update({
                         where: { id: product.id },
                         data: { currentStock: newStock },
                     });
 
                     // P0-1: InventoryTransaction 作成
+                    const noteBase = `売上CSV: ${csvImport.filename || filename}`;
                     await tx.inventoryTransaction.create({
                         data: {
                             productId: product.id,
                             type: "SALE_CSV",
                             quantity: quantitySold,
                             stockAfter: newStock,
-                            note: `売上CSV: ${csvImport.filename || filename}`,
+                            note: clamped ? `${noteBase} ⚠️ マイナス在庫を0にクランプ` : noteBase,
                             csvImportId: csvImport.id,
                             userId,
                         },

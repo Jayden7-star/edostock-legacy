@@ -114,29 +114,36 @@ productsRouter.put("/bulk-stock", requireAdmin, async (req, res) => {
             const newStock = parseInt(item.newStock);
             if (isNaN(productId) || isNaN(newStock)) continue;
 
-            const product = await prisma.product.findUnique({ where: { id: productId } });
-            if (!product) continue;
+            // マイナス在庫バリデーション
+            if (newStock < 0) {
+                return res.status(400).json({ error: "在庫がマイナスになるため処理できません" });
+            }
 
-            const diff = newStock - product.currentStock;
-            if (diff === 0) continue;
+            await prisma.$transaction(async (tx) => {
+                const product = await tx.product.findUnique({ where: { id: productId } });
+                if (!product) return;
 
-            await prisma.product.update({
-                where: { id: productId },
-                data: { currentStock: newStock },
+                const diff = newStock - product.currentStock;
+                if (diff === 0) return;
+
+                await tx.product.update({
+                    where: { id: productId },
+                    data: { currentStock: newStock },
+                });
+
+                await tx.inventoryTransaction.create({
+                    data: {
+                        productId,
+                        type: "ADJUSTMENT",
+                        quantity: diff,
+                        stockAfter: newStock,
+                        note: "一括在庫調整",
+                        userId,
+                    },
+                });
+
+                updatedCount++;
             });
-
-            await prisma.inventoryTransaction.create({
-                data: {
-                    productId,
-                    type: "ADJUSTMENT",
-                    quantity: diff,
-                    stockAfter: newStock,
-                    note: "一括在庫調整",
-                    userId,
-                },
-            });
-
-            updatedCount++;
         }
 
         res.json({ success: true, updatedCount });

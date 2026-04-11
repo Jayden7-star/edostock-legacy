@@ -64,11 +64,12 @@ model Product {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  category         Category              @relation(fields: [categoryId], references: [id])
-  transactions     InventoryTransaction[]
-  salesRecords     SalesRecord[]
-  inventoryCounts  InventoryCount[]
-  supplierMappings SupplierProductMapping[]
+  category            Category              @relation(fields: [categoryId], references: [id])
+  transactions        InventoryTransaction[]
+  salesRecords        SalesRecord[]
+  inventoryCounts     InventoryCount[]
+  supplierMappings    SupplierProductMapping[]
+  monthlyOptimalStock MonthlyOptimalStock[]
   @@map("products")
 }
 
@@ -229,6 +230,21 @@ model SupplierProductMapping {
 
   @@unique([supplierName, supplierProductName])
   @@map("supplier_product_mappings")
+}
+
+model MonthlyOptimalStock {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @map("product_id")
+  year          Int
+  month         Int
+  avgDailySales Float    @map("avg_daily_sales")
+  safetyFactor  Float    @map("safety_factor")
+  optimalStock  Int      @map("optimal_stock")
+  calculatedAt  DateTime @map("calculated_at")
+
+  product Product @relation(fields: [productId], references: [id])
+  @@unique([productId, year, month])
+  @@map("monthly_optimal_stock")
 }
 
 model SmaregiSyncLog {

@@ -80,18 +80,39 @@ inventoryRouter.get("/", async (req, res) => {
 inventoryRouter.post("/", async (req, res) => {
     const { productId, quantity, note, type = "PURCHASE" } = req.body;
     const userId = (req.session as any).userId;
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) return res.status(404).json({ error: "商品が見つかりません" });
 
-    const newStock = type === "ADJUSTMENT" ? quantity : product.currentStock + quantity;
-    const delta = type === "ADJUSTMENT" ? quantity - product.currentStock : quantity;
+    try {
+        const newStock = await prisma.$transaction(async (tx) => {
+            const product = await tx.product.findUnique({ where: { id: productId } });
+            if (!product) throw new Error("NOT_FOUND");
 
-    await prisma.$transaction([
-        prisma.product.update({ where: { id: productId }, data: { currentStock: newStock } }),
-        prisma.inventoryTransaction.create({
-            data: { productId, type, quantity: delta, stockAfter: newStock, note, userId },
-        }),
-    ]);
+            const resultStock = type === "ADJUSTMENT" ? quantity : product.currentStock + quantity;
+            const delta = type === "ADJUSTMENT" ? quantity - product.currentStock : quantity;
 
-    res.json({ success: true, newStock });
+            // マイナス在庫バリデーション
+            if (type === "ADJUSTMENT" && quantity < 0) {
+                throw new Error("NEGATIVE_STOCK");
+            }
+            if (type !== "ADJUSTMENT" && resultStock < 0) {
+                throw new Error("NEGATIVE_STOCK");
+            }
+
+            await tx.product.update({ where: { id: productId }, data: { currentStock: resultStock } });
+            await tx.inventoryTransaction.create({
+                data: { productId, type, quantity: delta, stockAfter: resultStock, note, userId },
+            });
+
+            return resultStock;
+        });
+
+        res.json({ success: true, newStock });
+    } catch (error: any) {
+        if (error.message === "NOT_FOUND") {
+            return res.status(404).json({ error: "商品が見つかりません" });
+        }
+        if (error.message === "NEGATIVE_STOCK") {
+            return res.status(400).json({ error: "在庫がマイナスになるため処理できません" });
+        }
+        res.status(500).json({ error: error.message || "在庫操作に失敗しました" });
+    }
 });

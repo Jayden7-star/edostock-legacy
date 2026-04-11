@@ -14,6 +14,7 @@ import { csvRouter } from "./csv";
 import { stocktakesRouter } from "./stocktakes";
 import { purchaseImportRouter } from "./purchase-import";
 import { smaregiRouter, syncSmaregiData } from "./smaregi";
+import { optimalStockRouter } from "./optimal-stock";
 import cron from "node-cron";
 
 export const prisma = new PrismaClient();
@@ -97,6 +98,7 @@ app.use("/api/stocktakes", requireAuth, stocktakesRouter);
 app.use("/api/purchase-import", requireAdmin, purchaseImportRouter);
 app.use("/api/smaregi", requireAdmin, smaregiRouter);
 app.use("/api/supplier-mappings", requireAuth, supplierMappingsRouter);
+app.use("/api/optimal-stock", requireAuth, optimalStockRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

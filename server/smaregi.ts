@@ -325,8 +325,15 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
             const product = await prisma.product.findUnique({ where: { janCode } });
             if (!product) continue; // Skip unregistered products
 
-            const newStock = Math.max(0, product.currentStock - salesData.quantity);
+            const rawStock = product.currentStock - salesData.quantity;
+            const clamped = rawStock < 0;
+            const newStock = Math.max(0, rawStock);
 
+            if (clamped) {
+                console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
+            }
+
+            const noteBase = `スマレジ同期 (${date}): ${salesData.quantity}個販売`;
             await prisma.$transaction([
                 prisma.product.update({
                     where: { id: product.id },
@@ -338,7 +345,7 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
                         type: "SMAREGI_SYNC",
                         quantity: -salesData.quantity,
                         stockAfter: newStock,
-                        note: `スマレジ同期 (${date}): ${salesData.quantity}個販売`,
+                        note: clamped ? `${noteBase} ⚠️ マイナス在庫を0にクランプ` : noteBase,
                         userId: 1, // System user
                     },
                 }),

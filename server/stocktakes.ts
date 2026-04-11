@@ -118,6 +118,15 @@ stocktakesRouter.post("/:id/complete", async (req, res) => {
         });
     }
 
+    // マイナス在庫バリデーション
+    const negativeItems = stocktake.counts.filter((c) => c.actualStock !== null && c.actualStock < 0);
+    if (negativeItems.length > 0) {
+        const names = negativeItems.map((c) => c.product.name).join(", ");
+        return res.status(400).json({
+            error: `実在庫がマイナスの商品があります: ${names}`,
+        });
+    }
+
     let discrepancyCount = 0;
 
     // 各商品の在庫を更新し、差異があればトランザクション記録
