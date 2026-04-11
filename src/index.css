@@ -12,32 +12,32 @@
        Accent:  Medium Blue #4A90D9 (213 55% 55%)
        ═══════════════════════════════════════════════ */
  
-    --background: 210 20% 96%;
-    --foreground: 220 20% 20%;
- 
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 20%;
- 
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 20%;
- 
+    --background: 40 20% 96%;
+    --foreground: 30 10% 18%;
+
+    --card: 40 15% 99%;
+    --card-foreground: 30 10% 18%;
+
+    --popover: 40 15% 99%;
+    --popover-foreground: 30 10% 18%;
+
     --primary: 213 40% 23%;
     --primary-foreground: 0 0% 100%;
- 
-    --secondary: 210 15% 95%;
-    --secondary-foreground: 220 20% 20%;
- 
-    --muted: 210 15% 95%;
-    --muted-foreground: 215 10% 50%;
- 
-    --accent: 213 55% 55%;
+
+    --secondary: 40 10% 93%;
+    --secondary-foreground: 30 10% 18%;
+
+    --muted: 40 10% 93%;
+    --muted-foreground: 30 5% 45%;
+
+    --accent: 210 25% 58%;
     --accent-foreground: 0 0% 100%;
  
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
  
-    --border: 214 15% 88%;
-    --input: 214 15% 88%;
+    --border: 35 10% 85%;
+    --input: 35 10% 85%;
     --ring: 213 40% 23%;
  
     --radius: 0.5rem;
@@ -45,10 +45,10 @@
     /* Custom EdoStock tokens — McKinsey palette */
     --edo-navy: 213 40% 23%;
     --edo-navy-light: 213 30% 30%;
-    --edo-navy-lighter: 210 15% 95%;
+    --edo-navy-lighter: 40 10% 93%;
     --edo-vermillion: 213 40% 23%;
-    --edo-gold: 213 55% 55%;
-    --edo-gold-dim: 215 10% 50%;
+    --edo-gold: 210 25% 58%;
+    --edo-gold-dim: 30 5% 45%;
     --edo-success: 152 55% 40%;
     --edo-warning: 38 85% 52%;
     --edo-info: 213 55% 55%;
@@ -63,8 +63,8 @@
     --sidebar-ring: 213 40% 23%;
  
     /* Flat card (replaces glassmorphism) */
-    --glass-bg: 0 0% 100%;
-    --glass-border: 214 15% 88%;
+    --glass-bg: 40 15% 99%;
+    --glass-border: 35 10% 85%;
     --glass-blur: 0px;
   }
 }
@@ -136,12 +136,12 @@
  
 /* テーブル行ボーダー強化 */
 table tbody tr {
-  border-bottom: 1px solid hsl(214 15% 82%);
+  border-bottom: 1px solid hsl(35 10% 80%);
 }
 
 /* リストアイテムのボーダー強化 */
 .glass-card [class*="border-b"] {
-  border-color: hsl(214 15% 82%);
+  border-color: hsl(35 10% 80%);
 }
 
 @layer utilities {
