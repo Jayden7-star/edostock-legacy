@@ -99,6 +99,7 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
         const wholesaleUnit = parseInt(r["卸単位"]) || 1;
         const quantity = num * wholesaleUnit;
         const unitCost = parseInt(r["購入卸単価"]) || 0;
+        const taxRate = parseInt(r["税率"]) || 10; // デフォルト10%（標準税率）
         const subtotal = parseInt(r["小計"]) || 0;
 
         const cleanName = rawName.replace(/★[^★]*★/g, "").replace(/【[^】]*】/g, "").trim();
@@ -127,7 +128,7 @@ purchaseImportRouter.post("/etoile", async (req, res) => {
             status: match ? "matched" as const : "unmatched" as const,
             itemCode, janCode,
             csvName: `${cleanName}${color ? ` ${color}` : ""}${size ? ` ${size}` : ""}`,
-            color, size, num, wholesaleUnit, quantity, unitCost, subtotal,
+            color, size, num, wholesaleUnit, quantity, unitCost, taxRate, subtotal,
             matchedProduct: match?.name || null,
             matchedId: match?.id || null,
         });
@@ -220,7 +221,9 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
                 });
 
                 if (item.unitCost && item.unitCost > 0) {
-                    await tx.product.update({ where: { id: productId }, data: { costPrice: item.unitCost } });
+                    const taxMultiplier = item.taxRate === 8 ? 1.08 : 1.10;
+                    const costPriceIncTax = Math.round(item.unitCost * taxMultiplier);
+                    await tx.product.update({ where: { id: productId }, data: { costPrice: costPriceIncTax } });
                 }
 
                 addedCount++;
@@ -589,7 +592,7 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
                             name: item.productName || "不明な商品",
                             janCode,
                             categoryId,
-                            costPrice: item.unitPrice || 0,
+                            costPrice: Math.round((item.unitPrice || 0) * 1.08),
                             sellingPrice: 0,
                             currentStock: 0,
                             supplyType: "OEM",
@@ -623,11 +626,12 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
                     },
                 });
 
-                // 原価更新
+                // 原価更新（税込変換: コレックは全て食品なので軽減税率8%）
                 if (item.unitPrice && item.unitPrice > 0) {
+                    const costPriceIncTax = Math.round(item.unitPrice * 1.08);
                     await tx.product.update({
                         where: { id: productId },
-                        data: { costPrice: item.unitPrice },
+                        data: { costPrice: costPriceIncTax },
                     });
                 }
 
