@@ -8,116 +8,180 @@ function daysInMonth(year: number, month: number): number {
     return new Date(year, month, 0).getDate();
 }
 
-// POST /api/optimal-stock/calculate — 適正在庫を計算してDBに保存
+// カテゴリ別安全係数
+function safetyFactorByDepartment(department: string): number {
+    switch (department) {
+        case "FOOD": return 1.2;    // 賞味期限リスク
+        case "APPAREL": return 1.5; // 欠品機会損失
+        case "GOODS": return 1.5;
+        default: return 1.2;
+    }
+}
+
+// POST /api/optimal-stock/calculate — 全対象商品 × 全月（1-12）の適正在庫を計算してDB保存
 optimalStockRouter.post("/calculate", async (req, res) => {
     try {
-        const { year, month, safetyFactor = 1.2, productIds } = req.body;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        const year = req.body.year || currentYear;
 
-        if (!year || !month || month < 1 || month > 12) {
-            return res.status(400).json({ error: "year と month (1-12) は必須です" });
+        // ── 1. 直近3ヶ月に販売実績がある商品を特定 ──
+        const threeMonthsAgo = new Date(currentYear, currentMonth - 3, 1);
+
+        const recentSales = await prisma.salesRecord.findMany({
+            where: {
+                periodStart: { gte: threeMonthsAgo },
+                quantitySold: { gt: 0 },
+            },
+            select: { productId: true },
+        });
+
+        const activeProductIds = Array.from(new Set(recentSales.map((r) => r.productId)));
+
+        if (activeProductIds.length === 0) {
+            return res.json({
+                year,
+                message: "直近3ヶ月に販売実績のある商品がありません",
+                calculatedCount: 0,
+                results: [],
+            });
         }
 
-        const sf = Number(safetyFactor);
-        if (isNaN(sf) || sf <= 0) {
-            return res.status(400).json({ error: "safetyFactor は正の数値で指定してください" });
-        }
-
-        // 対象商品を取得
-        const whereClause: any = { isActive: true };
-        if (productIds && Array.isArray(productIds) && productIds.length > 0) {
-            whereClause.id = { in: productIds };
-        }
-        const products = await prisma.product.findMany({ where: whereClause });
+        // ── 2. 対象商品をカテゴリ付きで取得 ──
+        const products = await prisma.product.findMany({
+            where: { id: { in: activeProductIds }, isActive: true },
+            include: { category: true },
+        });
 
         if (products.length === 0) {
-            return res.status(404).json({ error: "対象商品が見つかりません" });
+            return res.json({
+                year,
+                message: "対象のアクティブ商品がありません",
+                calculatedCount: 0,
+                results: [],
+            });
         }
 
-        // 対象月と同じ月の過去売上データを取得（全年度分）
-        // periodStart の月が target month と一致するレコードを集計
+        // ── 3. 2024年8月以降の販売データを取得（quantitySold > 0 で discount 除外）──
+        const dataStartDate = new Date(2024, 7, 1); // 2024-08-01
+
         const allSalesRecords = await prisma.salesRecord.findMany({
             where: {
                 productId: { in: products.map((p) => p.id) },
+                periodStart: { gte: dataStartDate },
+                quantitySold: { gt: 0 },
             },
         });
 
-        // 商品ごとに対象月の過去平均日販を算出
-        const days = daysInMonth(year, month);
-        const results: Array<{
-            productId: number;
-            productName: string;
+        // ── 4. 各商品 × 各月（1-12）の適正在庫を計算 ──
+        type MonthResult = {
+            month: number;
+            daysInMonth: number;
+            yearData: Record<number, number>; // year → totalQty
             avgDailySales: number;
             optimalStock: number;
-        }> = [];
+        };
 
-        await prisma.$transaction(async (tx) => {
-            for (const product of products) {
-                // 対象月と同じ月のレコードを抽出
-                const monthRecords = allSalesRecords.filter((r) => {
-                    const rMonth = r.periodStart.getMonth() + 1; // 0-indexed → 1-indexed
-                    return r.productId === product.id && rMonth === month;
-                });
+        type ProductResult = {
+            productId: number;
+            productName: string;
+            janCode: string;
+            department: string;
+            safetyFactor: number;
+            months: MonthResult[];
+        };
 
-                let avgDailySales = 0;
+        const results: ProductResult[] = [];
 
-                if (monthRecords.length > 0) {
-                    // 年ごとにグループ化して各年の合計販売数を計算
-                    const yearMap = new Map<number, number>();
-                    for (const rec of monthRecords) {
-                        const y = rec.periodStart.getFullYear();
-                        yearMap.set(y, (yearMap.get(y) || 0) + rec.quantitySold);
+        await prisma.$transaction(
+            async (tx) => {
+                for (const product of products) {
+                    const department = product.category.department;
+                    const sf = safetyFactorByDepartment(department);
+                    const productRecords = allSalesRecords.filter(
+                        (r) => r.productId === product.id
+                    );
+
+                    const months: MonthResult[] = [];
+
+                    for (let m = 1; m <= 12; m++) {
+                        const days = daysInMonth(year, m);
+
+                        // 該当月のレコードを抽出し、年別にグループ化
+                        const yearMap = new Map<number, number>();
+                        for (const rec of productRecords) {
+                            const rMonth = rec.periodStart.getMonth() + 1;
+                            if (rMonth !== m) continue;
+                            const y = rec.periodStart.getFullYear();
+                            yearMap.set(y, (yearMap.get(y) || 0) + rec.quantitySold);
+                        }
+
+                        let avgDailySales = 0;
+
+                        if (yearMap.size > 0) {
+                            // 各年の月間合計を平均 → 日販
+                            const totalMonthlyQty = Array.from(yearMap.values()).reduce(
+                                (sum, qty) => sum + qty,
+                                0
+                            );
+                            const avgMonthlyQty = totalMonthlyQty / yearMap.size;
+                            avgDailySales = avgMonthlyQty / days;
+                        }
+
+                        const optimal = Math.ceil(avgDailySales * days * sf);
+
+                        await tx.monthlyOptimalStock.upsert({
+                            where: {
+                                productId_year_month: {
+                                    productId: product.id,
+                                    year,
+                                    month: m,
+                                },
+                            },
+                            update: {
+                                avgDailySales,
+                                safetyFactor: sf,
+                                optimalStock: optimal,
+                                calculatedAt: new Date(),
+                            },
+                            create: {
+                                productId: product.id,
+                                year,
+                                month: m,
+                                avgDailySales,
+                                safetyFactor: sf,
+                                optimalStock: optimal,
+                                calculatedAt: new Date(),
+                            },
+                        });
+
+                        months.push({
+                            month: m,
+                            daysInMonth: days,
+                            yearData: Object.fromEntries(yearMap),
+                            avgDailySales: Math.round(avgDailySales * 100) / 100,
+                            optimalStock: optimal,
+                        });
                     }
 
-                    // 各年の日販を平均
-                    const yearCount = yearMap.size;
-                    const totalDailySales = Array.from(yearMap.values()).reduce(
-                        (sum, qty) => sum + qty / days,
-                        0
-                    );
-                    avgDailySales = totalDailySales / yearCount;
-                }
-
-                const optimal = Math.ceil(avgDailySales * days * sf);
-
-                await tx.monthlyOptimalStock.upsert({
-                    where: {
-                        productId_year_month: {
-                            productId: product.id,
-                            year,
-                            month,
-                        },
-                    },
-                    update: {
-                        avgDailySales,
-                        safetyFactor: sf,
-                        optimalStock: optimal,
-                        calculatedAt: new Date(),
-                    },
-                    create: {
+                    results.push({
                         productId: product.id,
-                        year,
-                        month,
-                        avgDailySales,
+                        productName: product.name,
+                        janCode: product.janCode,
+                        department,
                         safetyFactor: sf,
-                        optimalStock: optimal,
-                        calculatedAt: new Date(),
-                    },
-                });
-
-                results.push({
-                    productId: product.id,
-                    productName: product.name,
-                    avgDailySales: Math.round(avgDailySales * 100) / 100,
-                    optimalStock: optimal,
-                });
-            }
-        }, { timeout: 30000 });
+                        months,
+                    });
+                }
+            },
+            { timeout: 60000 }
+        );
 
         res.json({
             year,
-            month,
-            safetyFactor: sf,
-            daysInMonth: days,
+            dataStartDate: "2024-08",
+            recentSalesThreshold: threeMonthsAgo.toISOString().slice(0, 7),
             calculatedCount: results.length,
             results,
         });
@@ -162,7 +226,9 @@ optimalStockRouter.get("/month/:year/:month", async (req, res) => {
         const month = parseInt(req.params.month);
 
         if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-            return res.status(400).json({ error: "year と month (1-12) を正しく指定してください" });
+            return res.status(400).json({
+                error: "year と month (1-12) を正しく指定してください",
+            });
         }
 
         const records = await prisma.monthlyOptimalStock.findMany({
