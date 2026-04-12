@@ -18,6 +18,7 @@ import {
   Users,
   LogOut,
   RefreshCw,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { label: "CSVインポート", icon: FileDown, path: "/import" },
   { label: "発注アラート", icon: Bell, path: "/alerts" },
   { label: "棚卸し", icon: ClipboardList, path: "/stocktake" },
+  { label: "適正在庫", icon: Target, path: "/optimal-stock" },
   {
     label: "分析",
     icon: BarChart3,

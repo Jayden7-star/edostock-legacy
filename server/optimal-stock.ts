@@ -14,7 +14,7 @@ function safetyFactorByDepartment(department: string): number {
         case "FOOD": return 1.2;    // 賞味期限リスク
         case "APPAREL": return 1.5; // 欠品機会損失
         case "GOODS": return 1.5;
-        default: return 1.2;
+        default: return 1.3;
     }
 }
 
@@ -26,31 +26,67 @@ optimalStockRouter.post("/calculate", async (req, res) => {
         const currentMonth = now.getMonth() + 1;
         const year = req.body.year || currentYear;
 
-        // ── 1. 直近3ヶ月に販売実績がある商品を特定 ──
+        // ── 0. 終売自動判定 ──
+        // 対象: sales_type が REGULAR の商品のみ
+        // 条件: 過去に販売実績があり、直近3ヶ月で販売0
         const threeMonthsAgo = new Date(currentYear, currentMonth - 3, 1);
 
-        const recentSales = await prisma.salesRecord.findMany({
-            where: {
-                periodStart: { gte: threeMonthsAgo },
-                quantitySold: { gt: 0 },
-            },
-            select: { productId: true },
+        const regularProducts = await prisma.product.findMany({
+            where: { isActive: true, salesType: "REGULAR" },
+            select: { id: true, name: true, janCode: true },
         });
 
-        const activeProductIds = Array.from(new Set(recentSales.map((r) => r.productId)));
+        const discontinuedList: { id: number; name: string; janCode: string }[] = [];
+
+        for (const prod of regularProducts) {
+            const pastSales = await prisma.salesRecord.findFirst({
+                where: { productId: prod.id, quantitySold: { gt: 0 } },
+            });
+            if (!pastSales) continue;
+
+            const recentSales = await prisma.salesRecord.findFirst({
+                where: {
+                    productId: prod.id,
+                    periodStart: { gte: threeMonthsAgo },
+                    quantitySold: { gt: 0 },
+                },
+            });
+            if (!recentSales) {
+                await prisma.product.update({
+                    where: { id: prod.id },
+                    data: { salesType: "DISCONTINUED" },
+                });
+                discontinuedList.push(prod);
+            }
+        }
+
+        // ── 1. 販売実績がある商品を特定（DISCONTINUED除外）──
+        const allSalesForActive = await prisma.salesRecord.findMany({
+            where: { quantitySold: { gt: 0 } },
+            select: { productId: true },
+        });
+        const activeProductIds = Array.from(
+            new Set(allSalesForActive.map((r) => r.productId))
+        );
 
         if (activeProductIds.length === 0) {
             return res.json({
                 year,
-                message: "直近3ヶ月に販売実績のある商品がありません",
+                message: "販売実績のある商品がありません",
                 calculatedCount: 0,
+                discontinuedCount: discontinuedList.length,
+                discontinuedProducts: discontinuedList,
                 results: [],
             });
         }
 
-        // ── 2. 対象商品をカテゴリ付きで取得 ──
+        // ── 2. 対象商品をカテゴリ付きで取得（DISCONTINUED除外）──
         const products = await prisma.product.findMany({
-            where: { id: { in: activeProductIds }, isActive: true },
+            where: {
+                id: { in: activeProductIds },
+                isActive: true,
+                salesType: { not: "DISCONTINUED" },
+            },
             include: { category: true },
         });
 
@@ -59,17 +95,16 @@ optimalStockRouter.post("/calculate", async (req, res) => {
                 year,
                 message: "対象のアクティブ商品がありません",
                 calculatedCount: 0,
+                discontinuedCount: discontinuedList.length,
+                discontinuedProducts: discontinuedList,
                 results: [],
             });
         }
 
-        // ── 3. 2024年8月以降の販売データを取得（quantitySold > 0 で discount 除外）──
-        const dataStartDate = new Date(2024, 7, 1); // 2024-08-01
-
+        // ── 3. 全販売データを取得（quantitySold > 0 で discount 除外）──
         const allSalesRecords = await prisma.salesRecord.findMany({
             where: {
                 productId: { in: products.map((p) => p.id) },
-                periodStart: { gte: dataStartDate },
                 quantitySold: { gt: 0 },
             },
         });
@@ -78,9 +113,10 @@ optimalStockRouter.post("/calculate", async (req, res) => {
         type MonthResult = {
             month: number;
             daysInMonth: number;
-            yearData: Record<number, number>; // year → totalQty
+            yearData: Record<number, number>;
             avgDailySales: number;
             optimalStock: number;
+            hasSales: boolean;
         };
 
         type ProductResult = {
@@ -88,6 +124,7 @@ optimalStockRouter.post("/calculate", async (req, res) => {
             productName: string;
             janCode: string;
             department: string;
+            salesType: string;
             safetyFactor: number;
             months: MonthResult[];
         };
@@ -103,24 +140,28 @@ optimalStockRouter.post("/calculate", async (req, res) => {
                         (r) => r.productId === product.id
                     );
 
+                    // 全月のデータを集計
+                    const monthYearMap = new Map<number, Map<number, number>>();
+                    for (let m = 1; m <= 12; m++) {
+                        monthYearMap.set(m, new Map());
+                    }
+                    for (const rec of productRecords) {
+                        const rMonth = rec.periodStart.getMonth() + 1;
+                        const y = rec.periodStart.getFullYear();
+                        const yearMap = monthYearMap.get(rMonth)!;
+                        yearMap.set(y, (yearMap.get(y) || 0) + rec.quantitySold);
+                    }
+
                     const months: MonthResult[] = [];
 
                     for (let m = 1; m <= 12; m++) {
                         const days = daysInMonth(year, m);
-
-                        // 該当月のレコードを抽出し、年別にグループ化
-                        const yearMap = new Map<number, number>();
-                        for (const rec of productRecords) {
-                            const rMonth = rec.periodStart.getMonth() + 1;
-                            if (rMonth !== m) continue;
-                            const y = rec.periodStart.getFullYear();
-                            yearMap.set(y, (yearMap.get(y) || 0) + rec.quantitySold);
-                        }
+                        const yearMap = monthYearMap.get(m)!;
 
                         let avgDailySales = 0;
+                        const hasSales = yearMap.size > 0;
 
-                        if (yearMap.size > 0) {
-                            // 各年の月間合計を平均 → 日販
+                        if (hasSales) {
                             const totalMonthlyQty = Array.from(yearMap.values()).reduce(
                                 (sum, qty) => sum + qty,
                                 0
@@ -162,6 +203,7 @@ optimalStockRouter.post("/calculate", async (req, res) => {
                             yearData: Object.fromEntries(yearMap),
                             avgDailySales: Math.round(avgDailySales * 100) / 100,
                             optimalStock: optimal,
+                            hasSales,
                         });
                     }
 
@@ -170,6 +212,7 @@ optimalStockRouter.post("/calculate", async (req, res) => {
                         productName: product.name,
                         janCode: product.janCode,
                         department,
+                        salesType: product.salesType,
                         safetyFactor: sf,
                         months,
                     });
@@ -180,9 +223,9 @@ optimalStockRouter.post("/calculate", async (req, res) => {
 
         res.json({
             year,
-            dataStartDate: "2024-08",
-            recentSalesThreshold: threeMonthsAgo.toISOString().slice(0, 7),
             calculatedCount: results.length,
+            discontinuedCount: discontinuedList.length,
+            discontinuedProducts: discontinuedList,
             results,
         });
     } catch (error: any) {
@@ -201,7 +244,7 @@ optimalStockRouter.get("/:productId", async (req, res) => {
 
         const product = await prisma.product.findUnique({
             where: { id: productId },
-            select: { id: true, name: true, janCode: true },
+            select: { id: true, name: true, janCode: true, salesType: true },
         });
         if (!product) {
             return res.status(404).json({ error: "商品が見つかりません" });
@@ -242,6 +285,7 @@ optimalStockRouter.get("/month/:year/:month", async (req, res) => {
                         currentStock: true,
                         reorderPoint: true,
                         categoryId: true,
+                        salesType: true,
                         category: { select: { name: true, department: true } },
                     },
                 },

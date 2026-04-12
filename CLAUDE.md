@@ -54,6 +54,7 @@ edostock-legacy/
 │   │   ├── SeasonalAnalysis.tsx # 季節分析 (/analytics/seasonal)
 │   │   ├── Forecast.tsx      # 需要予測 (/analytics/forecast)
 │   │   ├── Recommendations.tsx # 発注推奨 (/analytics/recommendations)
+│   │   ├── OptimalStock.tsx  # 適正在庫一覧 (/optimal-stock)
 │   │   ├── ProductSettings.tsx # 商品設定 (/settings/products)
 │   │   ├── UserSettings.tsx  # ユーザー管理 (/settings/users)
 │   │   └── SmaregiSettings.tsx # スマレジ設定 (/settings/smaregi)
@@ -110,7 +111,7 @@ edostock-legacy/
 | `/api/smaregi/sync-logs` | GET | ADMIN | 同期ログ |
 | `/api/supplier-mappings` | GET | AUTH | マッピング一覧 |
 | `/api/supplier-mappings/:id` | PUT/DELETE | ADMIN | マッピング編集/削除 |
-| `/api/optimal-stock/calculate` | POST | AUTH | 適正在庫を計算してDB保存 |
+| `/api/optimal-stock/calculate` | POST | AUTH | 適正在庫を計算してDB保存（終売自動判定含む） |
 | `/api/optimal-stock/:productId` | GET | AUTH | 商品別の月別適正在庫取得 |
 | `/api/optimal-stock/month/:year/:month` | GET | AUTH | 特定月の全商品適正在庫一覧 |
 | `/api/health` | GET | - | ヘルスチェック |
@@ -119,7 +120,7 @@ edostock-legacy/
 
 - **users** — ユーザー (ADMIN / STAFF)
 - **categories** — 商品カテゴリ。`department`: FOOD / APPAREL / GOODS。`isFood`: 軽減税率適用フラグ
-- **products** — 商品マスタ。`janCode` (JANコード、ユニーク)、`currentStock` (現在庫)、`costPrice` (税込原価)、`sellingPrice` (売価)、`reorderPoint` (発注点)、`optimalStock` (適正在庫)、`optimalStock01`-`optimalStock12` (月別適正在庫、APPAREL用)、`supplyType` (PURCHASED / OEM)
+- **products** — 商品マスタ。`janCode` (JANコード、ユニーク)、`currentStock` (現在庫)、`costPrice` (税込原価)、`sellingPrice` (売価)、`reorderPoint` (発注点)、`optimalStock` (適正在庫)、`optimalStock01`-`optimalStock12` (月別適正在庫、APPAREL用)、`supplyType` (PURCHASED / OEM)、`salesType` (REGULAR / SEASONAL / WEATHER / DISCONTINUED)
 - **inventory_transactions** — 在庫変動履歴。type: PURCHASE_CSV / SALE_CSV / ADJUSTMENT / STOCKTAKE / SMAREGI_SYNC
 - **csv_imports** — インポート履歴。csvType: PRODUCT_SALES / MONTHLY_SALES / PURCHASE_ETOILE / PURCHASE_COREC / PURCHASE_JANNU。重複チェックに使用
 - **sales_records** — 商品別売上記録

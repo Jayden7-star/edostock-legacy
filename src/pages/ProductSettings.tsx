@@ -26,6 +26,7 @@ interface Product {
   categoryId: number;
   costPrice: number;
   sellingPrice: number;
+  currentStock: number;
   reorderPoint: number;
   optimalStock: number;
   optimalStock01: number;
@@ -41,6 +42,13 @@ interface Product {
   optimalStock11: number;
   optimalStock12: number;
   supplyType: string;
+  salesType: string;
+}
+
+interface MonthlyOptimalStock {
+  optimalStock: number;
+  month: number;
+  year: number;
 }
 
 interface SupplierMapping {
@@ -57,13 +65,30 @@ const supplyTypes = [
   { value: "REPACK", label: "リパック" },
 ];
 
+const salesTypes = [
+  { value: "REGULAR", label: "通年販売" },
+  { value: "SEASONAL", label: "季節限定" },
+  { value: "WEATHER", label: "天候依存" },
+  { value: "DISCONTINUED", label: "終売" },
+];
+
 const supplyLabel = (type: string) => supplyTypes.find((s) => s.value === type)?.label || type;
+const salesTypeLabel = (type: string) => salesTypes.find((s) => s.value === type)?.label || type;
+const salesTypeBadgeColor = (type: string) => {
+  switch (type) {
+    case "REGULAR": return "bg-green-500/15 text-green-400 border-green-500/30";
+    case "SEASONAL": return "bg-blue-500/15 text-blue-400 border-blue-500/30";
+    case "WEATHER": return "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+    case "DISCONTINUED": return "bg-red-500/15 text-red-400 border-red-500/30";
+    default: return "";
+  }
+};
 
 const monthLabels = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
 
 const emptyForm = {
   janCode: "", name: "", categoryId: "", costPrice: "", sellingPrice: "",
-  reorderPoint: "", optimalStock: "", supplyType: "PURCHASED", color: "", size: "",
+  reorderPoint: "", optimalStock: "", supplyType: "PURCHASED", salesType: "REGULAR", color: "", size: "",
   optimalStock01: "", optimalStock02: "", optimalStock03: "", optimalStock04: "",
   optimalStock05: "", optimalStock06: "", optimalStock07: "", optimalStock08: "",
   optimalStock09: "", optimalStock10: "", optimalStock11: "", optimalStock12: "",
@@ -88,9 +113,28 @@ const ProductSettings = () => {
   const [mappingSupplierFilter, setMappingSupplierFilter] = useState("ALL");
   const [editingMappingId, setEditingMappingId] = useState<number | null>(null);
   const [editingMappingProductId, setEditingMappingProductId] = useState<string>("");
+  const [monthlyStocks, setMonthlyStocks] = useState<Record<number, number>>({});
   const { toast } = useToast();
   const scrollYRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
+
+  const fetchMonthlyStocks = useCallback(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    fetch(`/api/optimal-stock/month/${year}/${month}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.results) {
+          const map: Record<number, number> = {};
+          for (const r of data.results) {
+            map[r.product.id] = r.optimalStock;
+          }
+          setMonthlyStocks(map);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchProducts = useCallback(() => {
     setLoading(true);
@@ -111,11 +155,12 @@ const ProductSettings = () => {
 
   useEffect(() => {
     fetchProducts();
+    fetchMonthlyStocks();
     fetch("/api/products/categories", { credentials: "include" })
       .then((r) => r.json())
       .then(setCategories)
       .catch(() => { });
-  }, [fetchProducts]);
+  }, [fetchProducts, fetchMonthlyStocks]);
 
   useEffect(() => {
     if (mappingsOpen) fetchMappings();
@@ -149,6 +194,7 @@ const ProductSettings = () => {
       reorderPoint: String(p.reorderPoint),
       optimalStock: String(p.optimalStock),
       supplyType: p.supplyType,
+      salesType: p.salesType || "REGULAR",
       color: p.color || "",
       size: p.size || "",
       optimalStock01: String(p.optimalStock01 || 0),
@@ -343,6 +389,28 @@ const ProductSettings = () => {
     }
   };
 
+  const handleSalesTypeChange = async (productId: number, newSalesType: string) => {
+    try {
+      const res = await fetch(`/api/products/${productId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ salesType: newSalesType }),
+      });
+      if (res.ok) {
+        toast({ title: "更新完了", description: `販売タイプを${salesTypeLabel(newSalesType)}に変更しました` });
+        scrollYRef.current = window.scrollY;
+        shouldRestoreScrollRef.current = true;
+        fetchProducts();
+      } else {
+        const data = await res.json();
+        toast({ title: "エラー", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
+    }
+  };
+
   const updateField = (field: string, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
 
   if (loading) {
@@ -399,10 +467,10 @@ const ProductSettings = () => {
                 <th className="text-left py-3 px-4 font-medium">JAN</th>
                 <th className="text-left py-3 px-4 font-medium">商品名</th>
                 <th className="text-left py-3 px-4 font-medium">部門</th>
-                <th className="text-left py-3 px-4 font-medium">供給</th>
+                <th className="text-left py-3 px-4 font-medium">販売タイプ</th>
                 <th className="text-right py-3 px-4 font-medium">原価</th>
                 <th className="text-right py-3 px-4 font-medium">売価</th>
-                <th className="text-right py-3 px-4 font-medium">発注点</th>
+                <th className="text-right py-3 px-4 font-medium">現在庫</th>
                 <th className="text-right py-3 px-4 font-medium">適正在庫</th>
                 <th className="text-center py-3 px-4 font-medium">操作</th>
               </tr>
@@ -421,20 +489,30 @@ const ProductSettings = () => {
                   <td className="py-3 px-4 font-num text-xs text-muted-foreground">{p.janCode}</td>
                   <td className="py-3 px-4 font-medium">{p.name}</td>
                   <td className="py-3 px-4"><Badge variant="outline" className="text-xs">{p.category.displayName}</Badge></td>
-                  <td className="py-3 px-4 text-xs text-muted-foreground">{supplyLabel(p.supplyType)}</td>
+                  <td className="py-3 px-4">
+                    <Select value={p.salesType || "REGULAR"} onValueChange={(v) => handleSalesTypeChange(p.id, v)}>
+                      <SelectTrigger className={`h-7 w-24 text-[11px] border ${salesTypeBadgeColor(p.salesType || "REGULAR")}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {salesTypes.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </td>
                   <td className="py-3 px-4 text-right font-num">¥{p.costPrice.toLocaleString()}</td>
                   <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
-                  <td className="py-3 px-4 text-right font-num">{p.reorderPoint}</td>
+                  <td className="py-3 px-4 text-right font-num">{p.currentStock}</td>
                   <td className="py-3 px-4 text-right font-num">
                     {(() => {
-                      if (p.category.department === "APPAREL") {
-                        const month = new Date().getMonth() + 1;
-                        const key = `optimalStock${String(month).padStart(2, "0")}` as keyof Product;
-                        const monthlyVal = (p[key] as number) || 0;
-                        const anySet = [p.optimalStock01,p.optimalStock02,p.optimalStock03,p.optimalStock04,p.optimalStock05,p.optimalStock06,p.optimalStock07,p.optimalStock08,p.optimalStock09,p.optimalStock10,p.optimalStock11,p.optimalStock12].some(v => v > 0);
-                        if (anySet) return <span>{monthlyVal} <span className="text-[10px] text-muted-foreground">({month}月)</span></span>;
-                      }
-                      return p.optimalStock;
+                      const monthlyVal = monthlyStocks[p.id];
+                      const isUnderstocked = monthlyVal !== undefined && p.currentStock < monthlyVal;
+                      const val = monthlyVal !== undefined ? monthlyVal : p.optimalStock;
+                      return (
+                        <span className={isUnderstocked ? "text-red-400 font-semibold" : ""}>
+                          {val}
+                          {isUnderstocked && <span className="text-[10px] ml-1">不足</span>}
+                        </span>
+                      );
                     })()}
                   </td>
                   <td className="py-3 px-4">
@@ -451,7 +529,7 @@ const ProductSettings = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={11} className="py-12 text-center text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p>商品が登録されていません</p>
                   </td>
@@ -492,6 +570,15 @@ const ProductSettings = () => {
                 <SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
                 <SelectContent>
                   {supplyTypes.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>販売タイプ</Label>
+              <Select value={form.salesType} onValueChange={(v) => updateField("salesType", v)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50 h-10"><SelectValue placeholder="選択" /></SelectTrigger>
+                <SelectContent>
+                  {salesTypes.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

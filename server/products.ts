@@ -27,7 +27,7 @@ productsRouter.get("/categories", async (_req, res) => {
 
 // POST /api/products — 新規商品作成（管理者のみ）
 productsRouter.post("/", requireAdmin, async (req, res) => {
-    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, color, size } = req.body;
+    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, salesType, color, size } = req.body;
     if (!janCode || !name || !categoryId) {
         return res.status(400).json({ error: "商品コード、商品名、部門は必須です" });
     }
@@ -46,6 +46,7 @@ productsRouter.post("/", requireAdmin, async (req, res) => {
                 reorderPoint: parseInt(reorderPoint) || 0,
                 optimalStock: parseInt(optimalStock) || 0,
                 supplyType: supplyType || "PURCHASED",
+                salesType: salesType || "REGULAR",
                 color: color || null,
                 size: size || null,
             },
@@ -69,7 +70,7 @@ productsRouter.put("/bulk-update", requireAdmin, async (req, res) => {
 
     try {
         // 許可するフィールドのみ抽出
-        const allowedFields = ["categoryId", "costPrice", "sellingPrice", "reorderPoint", "optimalStock", "supplyType", "isActive"];
+        const allowedFields = ["categoryId", "costPrice", "sellingPrice", "reorderPoint", "optimalStock", "supplyType", "salesType", "isActive"];
         const data: Record<string, any> = {};
         for (const field of allowedFields) {
             if (updates[field] !== undefined && updates[field] !== "") {
@@ -155,7 +156,7 @@ productsRouter.put("/bulk-stock", requireAdmin, async (req, res) => {
 // PUT /api/products/:id — 商品編集（管理者のみ）
 productsRouter.put("/:id", requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
-    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, color, size,
+    const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, salesType, color, size,
         optimalStock01, optimalStock02, optimalStock03, optimalStock04, optimalStock05, optimalStock06,
         optimalStock07, optimalStock08, optimalStock09, optimalStock10, optimalStock11, optimalStock12 } = req.body;
     try {
@@ -185,6 +186,7 @@ productsRouter.put("/:id", requireAdmin, async (req, res) => {
                 ...(reorderPoint !== undefined && { reorderPoint: parseInt(reorderPoint) }),
                 ...(optimalStock !== undefined && { optimalStock: parseInt(optimalStock) }),
                 ...(supplyType !== undefined && { supplyType }),
+                ...(salesType !== undefined && { salesType }),
                 ...(color !== undefined && { color: color || null }),
                 ...(size !== undefined && { size: size || null }),
                 ...monthlyData,
