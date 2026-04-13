@@ -4,8 +4,8 @@ services:
     runtime: node
     region: singapore
     plan: starter
-    buildCommand: npm install --include=dev && npx vite build && npx prisma generate --schema=./prisma/schema.prisma
-    startCommand: npx prisma db push --schema=./prisma/schema.prisma && npx tsx prisma/seed.ts && NODE_ENV=production npx tsx server/index.ts
+    buildCommand: npm install --include=dev && npx vite build && npx prisma generate --schema=./prisma/schema.prisma && cp prisma/schema.prisma _schema.prisma && cp prisma/seed.ts _seed.ts
+    startCommand: cp _schema.prisma prisma/schema.prisma && cp _seed.ts prisma/seed.ts && npx prisma db push --schema=./prisma/schema.prisma && npx tsx prisma/seed.ts && NODE_ENV=production npx tsx server/index.ts
     disk:
       name: edostock-data
       mountPath: /opt/render/project/src/prisma
