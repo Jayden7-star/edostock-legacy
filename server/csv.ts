@@ -17,13 +17,34 @@ csvRouter.post("/", async (req, res) => {
         }
 
         if (csvType === "PRODUCT_SALES") {
+            // 重複チェック: 同一ファイル名+期間のCOMPLETED済みレコードがあれば409
+            if (filename) {
+                const existing = await prisma.csvImport.findFirst({
+                    where: {
+                        filename,
+                        csvType: "PRODUCT_SALES",
+                        periodStart: new Date(periodStart),
+                        periodEnd: new Date(periodEnd),
+                        status: "COMPLETED",
+                    },
+                });
+                if (existing) {
+                    console.log(`売上CSV重複検知: ${filename} (importId: ${existing.id})`);
+                    return res.status(409).json({
+                        error: `この売上CSVは既にインポート済みです（ファイル名: ${filename}）`,
+                    });
+                }
+            }
+
+            // PENDING状態で作成 → トランザクション成功時にCOMPLETEDに更新
             const csvImport = await prisma.csvImport.create({
                 data: {
                     filename, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd),
-                    csvType: "PRODUCT_SALES", recordCount: records.length, userId, status: "COMPLETED",
+                    csvType: "PRODUCT_SALES", recordCount: records.length, userId, status: "PENDING",
                 },
             });
 
+            try {
             // P1-1: forループ全体を prisma.$transaction でラップ
             await prisma.$transaction(async (tx) => {
             for (const record of records) {
@@ -122,17 +143,49 @@ csvRouter.post("/", async (req, res) => {
             }
             }, { timeout: 30000 });
 
+            // トランザクション成功 → COMPLETEDに更新
+            await prisma.csvImport.update({
+                where: { id: csvImport.id },
+                data: { status: "COMPLETED" },
+            });
+
             return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
+            } catch (txError) {
+                // トランザクション失敗 → ゴーストレコード削除
+                console.error("売上CSVトランザクション失敗、PENDINGレコードを削除:", txError);
+                await prisma.csvImport.delete({ where: { id: csvImport.id } }).catch(() => {});
+                throw txError;
+            }
         }
 
         if (csvType === "MONTHLY_SALES") {
+            // 重複チェック: 同一ファイル名+期間のCOMPLETED済みレコードがあれば409
+            if (filename) {
+                const existing = await prisma.csvImport.findFirst({
+                    where: {
+                        filename,
+                        csvType: "MONTHLY_SALES",
+                        periodStart: new Date(periodStart),
+                        periodEnd: new Date(periodEnd),
+                        status: "COMPLETED",
+                    },
+                });
+                if (existing) {
+                    console.log(`月次売上CSV重複検知: ${filename} (importId: ${existing.id})`);
+                    return res.status(409).json({
+                        error: `この売上CSVは既にインポート済みです（ファイル名: ${filename}）`,
+                    });
+                }
+            }
+
             const csvImport = await prisma.csvImport.create({
                 data: {
                     filename, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd),
-                    csvType: "MONTHLY_SALES", recordCount: records.length, userId, status: "COMPLETED",
+                    csvType: "MONTHLY_SALES", recordCount: records.length, userId, status: "PENDING",
                 },
             });
 
+            try {
             for (const record of records) {
                 const dateStr = record["日付"]?.trim();
                 if (!dateStr || dateStr === "合計") continue;
@@ -163,7 +216,19 @@ csvRouter.post("/", async (req, res) => {
                 });
             }
 
+            // 成功 → COMPLETEDに更新
+            await prisma.csvImport.update({
+                where: { id: csvImport.id },
+                data: { status: "COMPLETED" },
+            });
+
             return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
+            } catch (txError) {
+                // 失敗 → ゴーストレコード削除
+                console.error("月次売上CSVインポート失敗、PENDINGレコードを削除:", txError);
+                await prisma.csvImport.delete({ where: { id: csvImport.id } }).catch(() => {});
+                throw txError;
+            }
         }
 
         res.status(400).json({ error: "不明なCSVタイプです" });

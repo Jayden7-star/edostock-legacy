@@ -249,6 +249,20 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
         return d.toISOString().split("T")[0];
     })();
 
+    // 重複チェック: 同一日付でSUCCESS済みの同期ログがあれば拒否
+    const existingSync = await prisma.smaregiSyncLog.findFirst({
+        where: {
+            syncDate: new Date(date),
+            status: "SUCCESS",
+        },
+    });
+    if (existingSync) {
+        console.log(`スマレジ同期重複検知: ${date} (logId: ${existingSync.id})`);
+        const error: any = new Error(`この日付のスマレジ同期は既に完了しています（${date}）`);
+        error.statusCode = 409;
+        throw error;
+    }
+
     const syncLog = await prisma.smaregiSyncLog.create({
         data: { status: "RUNNING", syncDate: new Date(date) },
     });
@@ -304,7 +318,7 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
             if (!code) continue;
             const qty = parseInt(detail.quantity) || 0;
             const sales = parseInt(detail.price) || 0;
-            if (qty <= 0) continue; // skip returns or zero-quantity items
+            if (qty === 0) continue; // skip zero-quantity items
 
             const existing = salesByProduct.get(code);
             if (existing) {
@@ -325,15 +339,30 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
             const product = await prisma.product.findUnique({ where: { janCode } });
             if (!product) continue; // Skip unregistered products
 
-            const rawStock = product.currentStock - salesData.quantity;
-            const clamped = rawStock < 0;
-            const newStock = Math.max(0, rawStock);
+            let newStock: number;
+            let noteBase: string;
 
-            if (clamped) {
-                console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
+            if (salesData.quantity > 0) {
+                // 通常販売: 在庫減算（マイナス在庫ガードあり）
+                const rawStock = product.currentStock - salesData.quantity;
+                const clamped = rawStock < 0;
+                newStock = Math.max(0, rawStock);
+
+                if (clamped) {
+                    console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
+                }
+
+                noteBase = `スマレジ同期 (${date}): ${salesData.quantity}個販売`;
+                if (clamped) noteBase += ` ⚠️ マイナス在庫を0にクランプ`;
+            } else {
+                // 返品: 在庫加算（クランプ不要）
+                const returnQty = Math.abs(salesData.quantity);
+                newStock = product.currentStock + returnQty;
+
+                noteBase = `スマレジ同期 (${date}): ${returnQty}個返品`;
+                console.log(`📦 返品処理: ${product.name} (ID:${product.id}) +${returnQty}個 → 在庫${newStock}`);
             }
 
-            const noteBase = `スマレジ同期 (${date}): ${salesData.quantity}個販売`;
             await prisma.$transaction([
                 prisma.product.update({
                     where: { id: product.id },
@@ -345,7 +374,7 @@ export async function syncSmaregiData(targetDate?: string): Promise<{
                         type: "SMAREGI_SYNC",
                         quantity: -salesData.quantity,
                         stockAfter: newStock,
-                        note: clamped ? `${noteBase} ⚠️ マイナス在庫を0にクランプ` : noteBase,
+                        note: noteBase,
                         userId: 1, // System user
                     },
                 }),
@@ -395,7 +424,8 @@ smaregiRouter.post("/sync", async (req, res) => {
         const result = await syncSmaregiData(date || undefined);
         res.json(result);
     } catch (error: any) {
-        res.status(500).json({
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
             success: false,
             error: error.message || "同期に失敗しました",
         });

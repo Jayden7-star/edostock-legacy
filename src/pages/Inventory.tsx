@@ -48,6 +48,29 @@ const statusConfig: Record<StockStatus, { label: string; dot: string; bg: string
 const getCategoryName = (p: Product): string =>
   p.category?.displayName || "未分類";
 
+type ColorChipStyle = { background: string } | null;
+
+const getColorChip = (name: string): ColorChipStyle => {
+  if (!name.includes("Tシャツ")) return null;
+
+  // 日本語カラー名を先にマッチ
+  if (name.includes("バナ")) return { background: "#FFE135" };
+  if (name.includes("インディゴ")) return { background: "linear-gradient(to right, #1A237E 50%, #5C8AB5 50%)" };
+  if (name.includes("ネイビー")) return { background: "#1B2A4A" };
+  if (name.includes("ブラック")) return { background: "#1A1A1A" };
+  if (name.includes("ミント")) return { background: "#2E8B8B" };
+
+  // アルファベット略称（長い順にマッチ）
+  if (name.includes("BP")) return { background: "#F4C2C2" };
+  if (name.includes("GR")) return { background: "#228B22" };
+  if (name.includes("LB")) return { background: "#87CEEB" };
+  if (name.includes("DB")) return { background: "#5C4033" };
+  if (name.includes("N")) return { background: "#1B2A4A" };
+  if (name.includes("R")) return { background: "#DC143C" };
+
+  return null;
+};
+
 const Inventory = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -301,7 +324,22 @@ const Inventory = () => {
                           <span className={cn("text-xs", cfg.bg)}>{cfg.label}</span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-medium">{p.name}</td>
+                      <td className="py-3 px-4 font-medium">
+                        {p.name}
+                        {getColorChip(p.name) && (
+                          <span
+                            style={{
+                              ...getColorChip(p.name)!,
+                              display: "inline-block",
+                              width: 20,
+                              height: 12,
+                              borderRadius: 3,
+                              marginLeft: 6,
+                              verticalAlign: "middle",
+                            }}
+                          />
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <Badge variant="outline" className="text-xs border-border/50">{getCategoryName(p)}</Badge>
                       </td>
@@ -388,7 +426,22 @@ const Inventory = () => {
                   >
                     {/* ヘッダー: 商品名 + ステータス */}
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold leading-tight line-clamp-2 flex-1">{p.name}</h3>
+                      <h3 className="text-sm font-semibold leading-tight line-clamp-2 flex-1">
+                        {p.name}
+                        {getColorChip(p.name) && (
+                          <span
+                            style={{
+                              ...getColorChip(p.name)!,
+                              display: "inline-block",
+                              width: 20,
+                              height: 12,
+                              borderRadius: 3,
+                              marginLeft: 6,
+                              verticalAlign: "middle",
+                            }}
+                          />
+                        )}
+                      </h3>
                       <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", cfg.dot)} title={cfg.label} />
                     </div>
 
