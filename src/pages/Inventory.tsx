@@ -48,25 +48,69 @@ const statusConfig: Record<StockStatus, { label: string; dot: string; bg: string
 const getCategoryName = (p: Product): string =>
   p.category?.displayName || "未分類";
 
-type ColorChipStyle = { background: string } | null;
+type ColorChipStyle = { background: string; border?: string } | null;
 
-const getColorChip = (name: string): ColorChipStyle => {
-  if (!name.includes("Tシャツ")) return null;
+const colorMap: Record<string, { background: string; border?: string }> = {
+  // 日本語カラー名
+  "ブラック": { background: "#1A1A1A" },
+  "ネイビー": { background: "#1B2A4A" },
+  "インディゴ": { background: "#3F51B5" },
+  "カブラウン": { background: "#8B6914" },
+  "ブラウン": { background: "#8B4513" },
+  "ダークブラウン": { background: "#5C4033" },
+  "アイボリー": { background: "#FFFFF0", border: "1px solid #D5D5C8" },
+  "ホワイト": { background: "#FFFFFF", border: "1px solid #D5D5D5" },
+  "オフホワイト": { background: "#FAF0E6", border: "1px solid #D5D5C8" },
+  "グリーン": { background: "#228B22" },
+  "カーキ": { background: "#6B7B3A" },
+  "オリーブ": { background: "#6B8E23" },
+  "ミント": { background: "#2E8B8B" },
+  "レッド": { background: "#DC143C" },
+  "ワイン": { background: "#722F37" },
+  "ボルドー": { background: "#6C1D45" },
+  "ピンク": { background: "#F4C2C2" },
+  "ベビーピンク": { background: "#F4C2C2" },
+  "ブルー": { background: "#4169E1" },
+  "ライトブルー": { background: "#87CEEB" },
+  "サックス": { background: "#87CEEB" },
+  "イエロー": { background: "#FFE135" },
+  "バナナ": { background: "#FFE135" },
+  "マスタード": { background: "#E1AD01" },
+  "グレー": { background: "#808080" },
+  "チャコール": { background: "#36454F" },
+  "ベージュ": { background: "#D4C5A9", border: "1px solid #BFB699" },
+  "パープル": { background: "#7B2D8E" },
+  "ラベンダー": { background: "#B57EDC" },
+  "オレンジ": { background: "#ED6D1F" },
+  // アルファベット略称
+  "BK": { background: "#1A1A1A" },
+  "NV": { background: "#1B2A4A" },
+  "GR": { background: "#228B22" },
+  "BP": { background: "#F4C2C2" },
+  "LB": { background: "#87CEEB" },
+  "DB": { background: "#5C4033" },
+  "WH": { background: "#FFFFFF", border: "1px solid #D5D5D5" },
+  "IV": { background: "#FFFFF0", border: "1px solid #D5D5C8" },
+  "BE": { background: "#D4C5A9", border: "1px solid #BFB699" },
+  "RD": { background: "#DC143C" },
+  "BL": { background: "#4169E1" },
+  "YE": { background: "#FFE135" },
+  "OR": { background: "#ED6D1F" },
+  "GY": { background: "#808080" },
+  "KH": { background: "#6B7B3A" },
+  "PP": { background: "#7B2D8E" },
+  "CR": { background: "#FFFDD0", border: "1px solid #D5D5C8" },
+};
 
-  // 日本語カラー名を先にマッチ
-  if (name.includes("バナ")) return { background: "#FFE135" };
-  if (name.includes("インディゴ")) return { background: "linear-gradient(to right, #1A237E 50%, #5C8AB5 50%)" };
-  if (name.includes("ネイビー")) return { background: "#1B2A4A" };
-  if (name.includes("ブラック")) return { background: "#1A1A1A" };
-  if (name.includes("ミント")) return { background: "#2E8B8B" };
+const getColorChip = (name: string, color?: string | null): ColorChipStyle => {
+  // colorフィールドを優先、なければ商品名からマッチ
+  const text = color || name;
 
-  // アルファベット略称（長い順にマッチ）
-  if (name.includes("BP")) return { background: "#F4C2C2" };
-  if (name.includes("GR")) return { background: "#228B22" };
-  if (name.includes("LB")) return { background: "#87CEEB" };
-  if (name.includes("DB")) return { background: "#5C4033" };
-  if (name.includes("N")) return { background: "#1B2A4A" };
-  if (name.includes("R")) return { background: "#DC143C" };
+  // 長いキーから順にマッチ（部分一致）
+  const keys = Object.keys(colorMap).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (text.includes(key)) return colorMap[key];
+  }
 
   return null;
 };
@@ -224,7 +268,7 @@ const Inventory = () => {
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-4 flex flex-wrap items-center gap-3"
       >
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative w-full md:w-auto md:flex-1 md:min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="商品名・JANコードで検索..."
@@ -296,13 +340,13 @@ const Inventory = () => {
                 <tr className="border-b border-border/50 text-muted-foreground">
                   <th className="text-left py-3 px-4 font-medium">状態</th>
                   <th className="text-left py-3 px-4 font-medium">商品名</th>
-                  <th className="text-left py-3 px-4 font-medium">部門</th>
+                  <th className="hidden md:table-cell text-left py-3 px-4 font-medium">部門</th>
                   <th className="text-right py-3 px-4 font-medium">現在庫</th>
-                  <th className="text-right py-3 px-4 font-medium">発注点</th>
-                  <th className="text-right py-3 px-4 font-medium">適正在庫</th>
-                  <th className="text-right py-3 px-4 font-medium">売価</th>
-                  <th className="text-right py-3 px-4 font-medium">原価</th>
-                  <th className="text-right py-3 px-4 font-medium">粗利率</th>
+                  <th className="hidden md:table-cell text-right py-3 px-4 font-medium">発注点</th>
+                  <th className="hidden md:table-cell text-right py-3 px-4 font-medium">適正在庫</th>
+                  <th className="hidden md:table-cell text-right py-3 px-4 font-medium">売価</th>
+                  <th className="hidden md:table-cell text-right py-3 px-4 font-medium">原価</th>
+                  <th className="hidden md:table-cell text-right py-3 px-4 font-medium">粗利率</th>
                   <th className="text-center py-3 px-4 font-medium">操作</th>
                 </tr>
               </thead>
@@ -310,6 +354,7 @@ const Inventory = () => {
                 {filtered.map((p, i) => {
                   const status = getStockStatus(p);
                   const cfg = statusConfig[status];
+                  const chip = getColorChip(p.name, p.color);
                   return (
                     <motion.tr
                       key={p.id}
@@ -326,10 +371,10 @@ const Inventory = () => {
                       </td>
                       <td className="py-3 px-4 font-medium">
                         {p.name}
-                        {getColorChip(p.name) && (
+                        {chip && (
                           <span
                             style={{
-                              ...getColorChip(p.name)!,
+                              ...chip,
                               display: "inline-block",
                               width: 20,
                               height: 12,
@@ -340,15 +385,15 @@ const Inventory = () => {
                           />
                         )}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="hidden md:table-cell py-3 px-4">
                         <Badge variant="outline" className="text-xs border-border/50">{getCategoryName(p)}</Badge>
                       </td>
                       <td className={cn("py-3 px-4 text-right font-num font-semibold", cfg.bg)}>{p.currentStock}</td>
-                      <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
-                      <td className="py-3 px-4 text-right font-num text-muted-foreground">{p.optimalStock}</td>
-                      <td className="py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right font-num text-muted-foreground">¥{p.costPrice.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
+                      <td className="hidden md:table-cell py-3 px-4 text-right font-num text-muted-foreground">{p.reorderPoint}</td>
+                      <td className="hidden md:table-cell py-3 px-4 text-right font-num text-muted-foreground">{p.optimalStock}</td>
+                      <td className="hidden md:table-cell py-3 px-4 text-right font-num">¥{p.sellingPrice.toLocaleString()}</td>
+                      <td className="hidden md:table-cell py-3 px-4 text-right font-num text-muted-foreground">¥{p.costPrice.toLocaleString()}</td>
+                      <td className="hidden md:table-cell py-3 px-4 text-right font-num">{grossMargin(p)}%</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-center gap-1">
                           <Button
@@ -408,11 +453,12 @@ const Inventory = () => {
               <p>該当する商品がありません</p>
             </div>
           ) : (
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {filtered.map((p, i) => {
                 const status = getStockStatus(p);
                 const cfg = statusConfig[status];
                 const isLowStock = p.currentStock <= 5;
+                const chip = getColorChip(p.name, p.color);
                 return (
                   <motion.div
                     key={p.id}
@@ -428,10 +474,10 @@ const Inventory = () => {
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-sm font-semibold leading-tight line-clamp-2 flex-1">
                         {p.name}
-                        {getColorChip(p.name) && (
+                        {chip && (
                           <span
                             style={{
-                              ...getColorChip(p.name)!,
+                              ...chip,
                               display: "inline-block",
                               width: 20,
                               height: 12,

@@ -60,7 +60,7 @@ const AppHeader = ({ user, onMenuToggle }: AppHeaderProps) => {
   };
 
   return (
-    <header className="h-16 border-b border-border bg-white shadow-sm flex items-center justify-between px-4 md:px-6 lg:px-8">
+    <header className="h-16 border-b border-border bg-white shadow-sm flex items-center justify-between px-4 md:px-6 lg:px-8 sticky top-0 z-40 md:relative md:z-auto">
       <div className="flex items-center gap-3">
         {onMenuToggle && (
           <button
@@ -70,7 +70,7 @@ const AppHeader = ({ user, onMenuToggle }: AppHeaderProps) => {
             <Menu className="w-5 h-5 text-foreground" />
           </button>
         )}
-        <h1 className="text-lg font-semibold tracking-wide text-primary">{title}</h1>
+        <h1 className="text-base md:text-lg font-semibold tracking-wide text-primary">{title}</h1>
         {modeLabel && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25 font-medium">
             {modeLabel}
@@ -80,7 +80,7 @@ const AppHeader = ({ user, onMenuToggle }: AppHeaderProps) => {
       <div className="flex items-center gap-3">
         {showDeptFilter && (
           <Select value={department} onValueChange={handleDeptChange}>
-            <SelectTrigger className="w-[130px] h-9 bg-secondary/50 border-border/50 text-sm">
+            <SelectTrigger className="w-auto md:w-[130px] h-9 bg-secondary/50 border-border/50 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -94,7 +94,7 @@ const AppHeader = ({ user, onMenuToggle }: AppHeaderProps) => {
           <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center">
             <User className="w-4 h-4 text-primary" />
           </div>
-          <span className="text-sm text-foreground/80 hover:text-foreground transition-colors">{user?.name || "管理者"}</span>
+          <span className="hidden md:inline text-sm text-foreground/80 hover:text-foreground transition-colors">{user?.name || "管理者"}</span>
         </Link>
       </div>
     </header>
