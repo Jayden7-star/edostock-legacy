@@ -1,5 +1,5 @@
 import { useLocation, Link, useSearchParams, useNavigate } from "react-router-dom";
-import { User } from "lucide-react";
+import { User, Menu } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const pageTitles: Record<string, string> = {
@@ -37,9 +37,10 @@ const deptModeLabel: Record<string, string> = {
 
 interface AppHeaderProps {
   user?: { name: string; role: string };
+  onMenuToggle?: () => void;
 }
 
-const AppHeader = ({ user }: AppHeaderProps) => {
+const AppHeader = ({ user, onMenuToggle }: AppHeaderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -59,8 +60,16 @@ const AppHeader = ({ user }: AppHeaderProps) => {
   };
 
   return (
-    <header className="h-16 border-b border-border bg-white shadow-sm flex items-center justify-between px-6 lg:px-8">
+    <header className="h-16 border-b border-border bg-white shadow-sm flex items-center justify-between px-4 md:px-6 lg:px-8">
       <div className="flex items-center gap-3">
+        {onMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            className="md:hidden p-2 -ml-2 rounded-lg hover:bg-secondary/50 transition-colors"
+          >
+            <Menu className="w-5 h-5 text-foreground" />
+          </button>
+        )}
         <h1 className="text-lg font-semibold tracking-wide text-primary">{title}</h1>
         {modeLabel && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25 font-medium">

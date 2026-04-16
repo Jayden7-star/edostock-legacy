@@ -6,9 +6,22 @@ import AppHeader from "./AppHeader";
 
 const AppLayout = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (!e.matches) setMobileMenuOpen(false);
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/session", { credentials: "include" })
@@ -46,13 +59,18 @@ const AppLayout = () => {
       <AppSidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
       />
       <motion.div
-        animate={{ marginLeft: sidebarCollapsed ? 72 : 260 }}
+        animate={{ marginLeft: isMobile ? 0 : (sidebarCollapsed ? 72 : 260) }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
         className="min-h-screen flex flex-col"
       >
-        <AppHeader user={user} />
+        <AppHeader
+          user={user}
+          onMenuToggle={() => setMobileMenuOpen(true)}
+        />
         <main className="flex-1 p-6 lg:p-8">
           <Outlet />
         </main>
