@@ -44,6 +44,7 @@ csvRouter.post("/", async (req, res) => {
                 },
             });
 
+            let autoCreatedCount = 0;
             try {
             // P1-1: forループ全体を prisma.$transaction でラップ
             await prisma.$transaction(async (tx) => {
@@ -101,8 +102,11 @@ csvRouter.post("/", async (req, res) => {
                                 janCode, name: productName, categoryId: category.id,
                                 color: record["カラー"]?.trim() || null, size: record["サイズ"]?.trim() || null,
                                 sellingPrice: quantitySold > 0 ? Math.round(netSales / quantitySold) : 0,
+                                isAutoCreated: true,
+                                needsReview: true,
                             },
                         });
+                        autoCreatedCount++;
                     }
                 }
 
@@ -149,7 +153,7 @@ csvRouter.post("/", async (req, res) => {
                 data: { status: "COMPLETED" },
             });
 
-            return res.json({ success: true, importId: csvImport.id, recordCount: records.length });
+            return res.json({ success: true, importId: csvImport.id, recordCount: records.length, autoCreatedCount });
             } catch (txError) {
                 // トランザクション失敗 → ゴーストレコード削除
                 console.error("売上CSVトランザクション失敗、PENDINGレコードを削除:", txError);
@@ -287,7 +291,7 @@ csvRouter.post("/preview", async (req, res) => {
                         take: 10,
                     });
                 }
-                unmatched.push({ janCode, productName, soldQty, candidates });
+                unmatched.push({ janCode, productName, soldQty, candidates, willAutoRegister: true });
             }
         }
 

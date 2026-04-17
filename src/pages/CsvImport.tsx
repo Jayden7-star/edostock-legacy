@@ -38,6 +38,7 @@ interface HistoryItem {
 interface ImportResult {
   recordCount: number;
   newCount: number;
+  autoCreatedCount?: number;
 }
 
 interface StockPreviewMatched {
@@ -52,6 +53,7 @@ interface StockPreviewUnmatched {
   productName: string;
   soldQty: number;
   candidates: { id: number; janCode: string; name: string }[];
+  willAutoRegister?: boolean;
 }
 
 interface StockPreviewData {
@@ -460,7 +462,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        setImportResult({ recordCount: data.recordCount, newCount: 0 });
+        setImportResult({ recordCount: data.recordCount, newCount: 0, autoCreatedCount: data.autoCreatedCount || 0 });
         setStep(3);
         toast({ title: "インポート完了", description: `${data.recordCount}件のデータを取り込みました` });
       } else {
@@ -631,6 +633,11 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
                                     className="w-3.5 h-3.5"
                                   />
                                   <span className="text-xs">新規商品として登録</span>
+                                  {sel.mode === "new" && (
+                                    <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-400/50 px-1.5 py-0">
+                                      <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />商品マスタ未登録
+                                    </Badge>
+                                  )}
                                 </label>
                               </div>
                             </div>
@@ -764,6 +771,18 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
                   <span className="font-num font-semibold">{parsedRows.length}件</span>
                 </div>
               </div>
+              {(() => {
+                const autoRegisterCount = previewData?.unmatched.filter(
+                  (u) => !unmatchedSelections.get(u.janCode) || unmatchedSelections.get(u.janCode)?.mode === "new"
+                ).length || 0;
+                return autoRegisterCount > 0 ? (
+                  <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg p-3 mt-3 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span className="text-sm text-amber-400 font-medium">新規自動登録: {autoRegisterCount}件</span>
+                    <span className="text-xs text-muted-foreground">（要確認商品として登録されます）</span>
+                  </div>
+                ) : null;
+              })()}
             </div>
 
             <div className="glass-card overflow-hidden">
@@ -840,6 +859,9 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
             <div className="flex justify-center gap-8 mb-8 text-sm">
               <div><span className="text-muted-foreground">取込件数: </span><span className="font-num font-semibold">{importResult?.recordCount || 0}件</span></div>
               <div><span className="text-muted-foreground">在庫反映: </span><span className="font-num font-semibold text-edo-success">完了</span></div>
+              {(importResult?.autoCreatedCount || 0) > 0 && (
+                <div><span className="text-muted-foreground">新規自動登録: </span><span className="font-num font-semibold text-amber-400">{importResult?.autoCreatedCount}件</span></div>
+              )}
             </div>
             <div className="flex justify-center gap-3">
               <Button variant="outline" onClick={() => { setStep(0); setFile(null); setParsedRows([]); setImportResult(null); }}>続けてインポート</Button>

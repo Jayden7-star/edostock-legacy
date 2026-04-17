@@ -596,6 +596,8 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
                             sellingPrice: 0,
                             currentStock: 0,
                             supplyType: "OEM",
+                            isAutoCreated: true,
+                            needsReview: true,
                         },
                     });
                     productId = newProduct.id;
@@ -945,6 +947,8 @@ purchaseImportRouter.post("/jannu/confirm", async (req, res) => {
                             color: item.color || null,
                             size: item.size || null,
                             supplyType: "OEM",
+                            isAutoCreated: true,
+                            needsReview: true,
                         },
                     });
                     productId = newProduct.id;

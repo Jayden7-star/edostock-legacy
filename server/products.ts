@@ -212,6 +212,27 @@ productsRouter.delete("/:id", requireAdmin, async (req, res) => {
     }
 });
 
+// PATCH /api/products/:id/review — 確認済みにする（管理者のみ）
+productsRouter.patch("/:id/review", requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { reorderPoint } = req.body;
+    try {
+        const data: Record<string, any> = { needsReview: false };
+        if (reorderPoint !== undefined) {
+            data.reorderPoint = parseInt(reorderPoint) || 0;
+        }
+        const product = await prisma.product.update({
+            where: { id },
+            data,
+            include: { category: true },
+        });
+        res.json(product);
+    } catch (error: any) {
+        if (error.code === "P2025") return res.status(404).json({ error: "商品が見つかりません" });
+        res.status(500).json({ error: error.message || "確認処理に失敗しました" });
+    }
+});
+
 // ========== SupplierProductMapping API ==========
 
 // GET /api/supplier-mappings — マッピング一覧（?supplier= でフィルタ可能）

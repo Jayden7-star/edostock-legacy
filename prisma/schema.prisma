@@ -62,6 +62,8 @@ model Product {
   supplyType    String    @default("PURCHASED")
   salesType     String    @default("REGULAR") @map("sales_type")
   isActive      Boolean   @default(true) @map("is_active")
+  isAutoCreated Boolean   @default(false) @map("is_auto_created")
+  needsReview   Boolean   @default(false) @map("needs_review")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 

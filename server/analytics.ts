@@ -89,11 +89,15 @@ analyticsRouter.get("/dashboard", async (req, res) => {
             where: { recordType: "SET_ITEM" },
         });
 
+        // 要確認商品カウント
+        const reviewCount = allProducts.filter((p) => p.needsReview).length;
+
         // Smaregi sync status
         const smaregiConfig = await prisma.smaregiConfig.findFirst();
 
         res.json({
             alertCount: alerts.length,
+            reviewCount,
             totalStock,
             totalProducts: allProducts.length,
             monthlySales: currentMonthSales?.netSales || 0,
@@ -119,7 +123,7 @@ analyticsRouter.get("/dashboard", async (req, res) => {
     } catch (error) {
         console.error("Dashboard error:", error);
         res.json({
-            alertCount: 0, totalStock: 0, totalProducts: 0,
+            alertCount: 0, reviewCount: 0, totalStock: 0, totalProducts: 0,
             monthlySales: 0, salesChange: 0, grossMarginRate: 0,
             salesTrend: [], forecastNextMonth: 0, seasonalNote: null,
             discountTotal: 0, discountCount: 0, setItemTotal: 0, setItemCount: 0,

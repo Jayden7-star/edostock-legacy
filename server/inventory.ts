@@ -50,7 +50,24 @@ inventoryRouter.get("/alerts", async (req, res) => {
             const order: Record<string, number> = { critical: 0, warning: 1 };
             return (order[a.severity] ?? 1) - (order[b.severity] ?? 1) || a.currentStock - b.currentStock;
         });
-    res.json(alerts);
+    // 要確認商品（自動登録された未レビュー商品）
+    const reviewProducts = await prisma.product.findMany({
+        where: { isActive: true, needsReview: true, ...deptFilter },
+        include: { category: true },
+        orderBy: { createdAt: "desc" },
+    });
+    const reviewAlerts = reviewProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        janCode: p.janCode,
+        category: p.category.displayName,
+        department: p.category.department,
+        currentStock: p.currentStock,
+        reorderPoint: p.reorderPoint,
+        createdAt: p.createdAt,
+    }));
+
+    res.json({ lowStockAlerts: alerts, reviewAlerts });
 });
 
 inventoryRouter.patch("/:id/deactivate", async (req, res) => {
