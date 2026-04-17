@@ -7,10 +7,12 @@ export const supplierMappingsRouter = Router();
 productsRouter.get("/", async (req, res) => {
     const search = req.query.search as string | undefined;
     const department = req.query.department as string | undefined;
+    const isActiveParam = req.query.isActive as string | undefined;
     const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
+    const isActiveFilter = isActiveParam === "all" ? {} : { isActive: isActiveParam === "false" ? false : true };
     const products = await prisma.product.findMany({
         where: {
-            isActive: true,
+            ...isActiveFilter,
             ...deptFilter,
             ...(search ? { OR: [{ name: { contains: search } }, { janCode: { contains: search } }] } : {}),
         },
@@ -96,6 +98,48 @@ productsRouter.put("/bulk-update", requireAdmin, async (req, res) => {
         res.json({ success: true, updatedCount: result.count });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "一括更新に失敗しました" });
+    }
+});
+
+// PATCH /api/products/bulk-activate — 一括有効化（管理者のみ）
+productsRouter.patch("/bulk-activate", requireAdmin, async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "商品が選択されていません" });
+    }
+    try {
+        const targetIds = ids.map((id: any) => parseInt(id));
+        const [result] = await prisma.$transaction([
+            prisma.product.updateMany({ where: { id: { in: targetIds } }, data: { isActive: true } }),
+        ]);
+        const updated = await prisma.product.findMany({
+            where: { id: { in: targetIds }, isActive: true },
+            select: { id: true },
+        });
+        res.json({ success: true, updatedCount: result.count, updatedIds: updated.map(p => p.id) });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "一括有効化に失敗しました" });
+    }
+});
+
+// PATCH /api/products/bulk-deactivate — 一括無効化（管理者のみ）
+productsRouter.patch("/bulk-deactivate", requireAdmin, async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "商品が選択されていません" });
+    }
+    try {
+        const targetIds = ids.map((id: any) => parseInt(id));
+        const [result] = await prisma.$transaction([
+            prisma.product.updateMany({ where: { id: { in: targetIds } }, data: { isActive: false } }),
+        ]);
+        const updated = await prisma.product.findMany({
+            where: { id: { in: targetIds }, isActive: false },
+            select: { id: true },
+        });
+        res.json({ success: true, updatedCount: result.count, updatedIds: updated.map(p => p.id) });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "一括無効化に失敗しました" });
     }
 });
 
@@ -209,6 +253,22 @@ productsRouter.delete("/:id", requireAdmin, async (req, res) => {
     } catch (error: any) {
         if (error.code === "P2025") return res.status(404).json({ error: "商品が見つかりません" });
         res.status(500).json({ error: error.message || "商品の削除に失敗しました" });
+    }
+});
+
+// PATCH /api/products/:id/activate — 有効化（管理者のみ）
+productsRouter.patch("/:id/activate", requireAdmin, async (req, res) => {
+    const id = parseInt(req.params.id);
+    try {
+        const product = await prisma.product.update({
+            where: { id },
+            data: { isActive: true },
+            include: { category: true },
+        });
+        res.json(product);
+    } catch (error: any) {
+        if (error.code === "P2025") return res.status(404).json({ error: "商品が見つかりません" });
+        res.status(500).json({ error: error.message || "商品の有効化に失敗しました" });
     }
 });
 
