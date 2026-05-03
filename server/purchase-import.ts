@@ -297,100 +297,111 @@ function parseCorecLines(pageTexts: string[]) {
         spec: string; quantity: number; unitPrice: number; subtotal: number;
     }> = [];
 
-    const fullText = pageTexts.join(" ");
+    // OOM対策: pageTexts.join(" ") による全ページ連結を廃止し、ページ単位でパースする。
+    // 全ページを 1 本の巨大文字列に結合すると、fullText とトークン配列が同時にヒープ常駐し
+    // 正規表現の backtracking でピーク RSS が膨らむため、各ステージ内でページを順次処理する。
+    // 3 段フォールバック（Stage1: lineRegex / Stage2: token-based / Stage3: orderRegex）の
+    // ドキュメント全体での順序は維持する。
 
-    // Regex pattern for COREC order lines
+    // Stage 1: COREC 注文行の正規表現
     // "233563   たらこ   4970974- 101026   70g 築地   10   ¥232   20   対 象   ¥4,640"
     // JANコードが改行をまたぐ場合に対応: "4970974‐10\n0661" → \d+(?:\n\d+)? でキャプチャ
     const lineRegex = /(\d{6})\s+([\u3000-\u9FFF\uF900-\uFAFF\w（）\s]+?)\s+(4970974[\s\-‐‑‒–—―ー－]*\d+(?:\n\d+)?)\s+(.+?)\s+(\d+)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
-
-    let match;
-    while ((match = lineRegex.exec(fullText)) !== null) {
-        const janCode = normalizeJan(match[3]);
-        results.push({
-            hinban: match[1],
-            productName: match[2].trim(),
-            janCode: janCode.length >= 13 ? janCode.substring(0, 13) : janCode,
-            spec: match[4].trim(),
-            quantity: parseInt(match[7]) || 0,
-            unitPrice: parseInt(match[6].replace(/,/g, "")) || 0,
-            subtotal: parseInt(match[8].replace(/,/g, "")) || 0,
-        });
+    for (const pageText of pageTexts) {
+        lineRegex.lastIndex = 0;
+        let match;
+        while ((match = lineRegex.exec(pageText)) !== null) {
+            const janCode = normalizeJan(match[3]);
+            results.push({
+                hinban: match[1],
+                productName: match[2].trim(),
+                janCode: janCode.length >= 13 ? janCode.substring(0, 13) : janCode,
+                spec: match[4].trim(),
+                quantity: parseInt(match[7]) || 0,
+                unitPrice: parseInt(match[6].replace(/,/g, "")) || 0,
+                subtotal: parseInt(match[8].replace(/,/g, "")) || 0,
+            });
+        }
     }
 
-    // Fallback: token-based parsing if regex fails
+    // Stage 2: トークンベースのフォールバック（ページ単位）
     if (results.length === 0) {
-        const tokens = fullText.split(/\s+/);
-        for (let i = 0; i < tokens.length; i++) {
-            if (!/^\d{6}$/.test(tokens[i])) continue;
-            const hinban = tokens[i];
+        for (const pageText of pageTexts) {
+            const tokens = pageText.split(/\s+/);
+            for (let i = 0; i < tokens.length; i++) {
+                if (!/^\d{6}$/.test(tokens[i])) continue;
+                const hinban = tokens[i];
 
-            let nameTokens: string[] = [];
-            let j = i + 1;
-            while (j < tokens.length && !tokens[j].startsWith("4970974")) {
-                nameTokens.push(tokens[j]);
-                j++;
-            }
-            if (j >= tokens.length) continue;
-
-            let janTokens: string[] = [];
-            while (j < tokens.length) {
-                const cleaned = tokens[j].replace(/[\s\-‐‑‒–—―ー－]/g, "");
-                if (/^\d+$/.test(cleaned) || tokens[j].startsWith("4970974")) {
-                    janTokens.push(tokens[j]);
+                const nameTokens: string[] = [];
+                let j = i + 1;
+                while (j < tokens.length && !tokens[j].startsWith("4970974")) {
+                    nameTokens.push(tokens[j]);
                     j++;
-                    if (normalizeJan(janTokens.join("")).length >= 13) break;
-                } else break;
-            }
-            const janCode = normalizeJan(janTokens.join(""));
-
-            let quantity = 0, unitPrice = 0, subtotal = 0;
-            for (let k = j; k < Math.min(j + 12, tokens.length); k++) {
-                const costMatch = tokens[k].match(/^[¥￥]([\d,]+)$/);
-                if (costMatch && unitPrice === 0) {
-                    unitPrice = parseInt(costMatch[1].replace(/,/g, "")) || 0;
-                    if (k + 1 < tokens.length && /^\d+$/.test(tokens[k + 1])) {
-                        quantity = parseInt(tokens[k + 1]) || 0;
-                    }
-                } else if (costMatch && unitPrice > 0 && k > j + 3) {
-                    subtotal = parseInt(costMatch[1].replace(/,/g, "")) || 0;
                 }
-            }
+                if (j >= tokens.length) continue;
 
-            if (janCode.length >= 7 && quantity > 0) {
-                results.push({
-                    hinban,
-                    productName: nameTokens.join(" ").trim(),
-                    janCode: janCode.substring(0, 13),
-                    spec: "",
-                    quantity, unitPrice, subtotal,
-                });
+                const janTokens: string[] = [];
+                while (j < tokens.length) {
+                    const cleaned = tokens[j].replace(/[\s\-‐‑‒–—―ー－]/g, "");
+                    if (/^\d+$/.test(cleaned) || tokens[j].startsWith("4970974")) {
+                        janTokens.push(tokens[j]);
+                        j++;
+                        if (normalizeJan(janTokens.join("")).length >= 13) break;
+                    } else break;
+                }
+                const janCode = normalizeJan(janTokens.join(""));
+
+                let quantity = 0, unitPrice = 0, subtotal = 0;
+                for (let k = j; k < Math.min(j + 12, tokens.length); k++) {
+                    const costMatch = tokens[k].match(/^[¥￥]([\d,]+)$/);
+                    if (costMatch && unitPrice === 0) {
+                        unitPrice = parseInt(costMatch[1].replace(/,/g, "")) || 0;
+                        if (k + 1 < tokens.length && /^\d+$/.test(tokens[k + 1])) {
+                            quantity = parseInt(tokens[k + 1]) || 0;
+                        }
+                    } else if (costMatch && unitPrice > 0 && k > j + 3) {
+                        subtotal = parseInt(costMatch[1].replace(/,/g, "")) || 0;
+                    }
+                }
+
+                if (janCode.length >= 7 && quantity > 0) {
+                    results.push({
+                        hinban,
+                        productName: nameTokens.join(" ").trim(),
+                        janCode: janCode.substring(0, 13),
+                        spec: "",
+                        quantity, unitPrice, subtotal,
+                    });
+                }
             }
         }
     }
 
-    // Fallback 2: 発注書フォーマット（JANコードなし）
+    // Stage 3: 発注書フォーマット（JANコードなし、ページ単位）
     // パターン: 品番(6桁) + 商品名 + ¥単価 + 数量 + 対象 + ¥金額
     if (results.length === 0) {
         const orderRegex = /(\d{6})\s+(.+?)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
-        let orderMatch;
-        while ((orderMatch = orderRegex.exec(fullText)) !== null) {
-            const hinban = orderMatch[1];
-            const productName = orderMatch[2].replace(/\s{2,}/g, " ").trim();
-            const unitPrice = parseInt(orderMatch[3].replace(/,/g, "")) || 0;
-            const quantity = parseInt(orderMatch[4]) || 0;
-            const subtotal = parseInt(orderMatch[5].replace(/,/g, "")) || 0;
+        for (const pageText of pageTexts) {
+            orderRegex.lastIndex = 0;
+            let orderMatch;
+            while ((orderMatch = orderRegex.exec(pageText)) !== null) {
+                const hinban = orderMatch[1];
+                const productName = orderMatch[2].replace(/\s{2,}/g, " ").trim();
+                const unitPrice = parseInt(orderMatch[3].replace(/,/g, "")) || 0;
+                const quantity = parseInt(orderMatch[4]) || 0;
+                const subtotal = parseInt(orderMatch[5].replace(/,/g, "")) || 0;
 
-            if (quantity > 0) {
-                results.push({
-                    hinban,
-                    productName,
-                    janCode: "",  // JANコードなし — 品番でフォールバック検索
-                    spec: "",
-                    quantity,
-                    unitPrice,
-                    subtotal,
-                });
+                if (quantity > 0) {
+                    results.push({
+                        hinban,
+                        productName,
+                        janCode: "",  // JANコードなし — 品番でフォールバック検索
+                        spec: "",
+                        quantity,
+                        unitPrice,
+                        subtotal,
+                    });
+                }
             }
         }
     }
@@ -401,11 +412,18 @@ function parseCorecLines(pageTexts: string[]) {
 /**
  * parseCorecPDF — コレックPDFバッファを受け取り、商品行をパースして返す
  * pdf-parse でテキスト抽出 → 品番(6桁)開始行を検出 → JAN正規化 → 数量抽出
+ *
+ * OOM対策: 抽出済み pageTexts も併せて返すことで、呼び出し側がパース失敗時の
+ * rawText プレビュー表示のために extractPdfText を再度呼び出す（pdfjs 二重起動）
+ * のを防ぐ。
  */
-async function parseCorecPDF(buffer: Buffer): Promise<Array<{
-    hinban: string; productName: string; janCode: string;
-    quantity: number; unitPrice: number;
-}>> {
+async function parseCorecPDF(buffer: Buffer): Promise<{
+    items: Array<{
+        hinban: string; productName: string; janCode: string;
+        quantity: number; unitPrice: number;
+    }>;
+    pageTexts: string[];
+}> {
     try {
         if (!buffer || buffer.length === 0) {
             throw new Error("PDFバッファが空または無効です");
@@ -415,13 +433,14 @@ async function parseCorecPDF(buffer: Buffer): Promise<Array<{
             throw new Error("PDFテキスト抽出結果が空です");
         }
         const lines = parseCorecLines(pageTexts);
-        return lines.map((l) => ({
+        const items = lines.map((l) => ({
             hinban: l.hinban,
             productName: l.productName,
             janCode: l.janCode,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
         }));
+        return { items, pageTexts };
     } catch (error) {
         throw new Error(`COREC PDF パース失敗: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -433,20 +452,15 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
     }
 
     try {
-        const parsed = await parseCorecPDF(req.file.buffer);
+        // OOM対策: parseCorecPDF が抽出済み pageTexts を返すため、
+        // 失敗時に extractPdfText を再呼び出しして pdfjs を二重起動する経路を撤廃。
+        const { items: parsed, pageTexts } = await parseCorecPDF(req.file.buffer);
 
         if (parsed.length === 0) {
-            try {
-                const pageTexts = await extractPdfText(req.file.buffer);
-                return res.status(400).json({
-                    error: "PDFから商品データを抽出できませんでした",
-                    rawText: pageTexts.join("\n").substring(0, 500),
-                });
-            } catch (textError: any) {
-                return res.status(400).json({
-                    error: "PDFテキスト抽出失敗: " + (textError instanceof Error ? textError.message : String(textError)),
-                });
-            }
+            return res.status(400).json({
+                error: "PDFから商品データを抽出できませんでした",
+                rawText: pageTexts.join("\n").substring(0, 500),
+            });
         }
 
         // マッチング処理してプレビュー用データを生成
