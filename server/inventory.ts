@@ -1,5 +1,10 @@
 import { Router } from "express";
 import { prisma } from "./index.js";
+import {
+    batchAdjustInventory,
+    InventoryAdjustInputError,
+    InventoryAdjustServiceError,
+} from "./inventory-adjust-service.js";
 
 export const inventoryRouter = Router();
 
@@ -131,5 +136,25 @@ inventoryRouter.post("/", async (req, res) => {
             return res.status(400).json({ error: "在庫がマイナスになるため処理できません" });
         }
         res.status(500).json({ error: error.message || "在庫操作に失敗しました" });
+    }
+});
+
+// PUT /api/inventory/batch — 複数商品の実在庫を一括保存（単一トランザクション / fail-all）
+// body: { items: [{ productId, actualStock, note? }] }
+inventoryRouter.put("/batch", async (req, res) => {
+    const userId = (req.session as any).userId;
+    const { items } = req.body;
+
+    try {
+        const result = await batchAdjustInventory(prisma, items, userId);
+        res.json(result);
+    } catch (error: any) {
+        if (error instanceof InventoryAdjustInputError) {
+            return res.status(400).json({ error: error.message });
+        }
+        if (error instanceof InventoryAdjustServiceError && error.code === "PRODUCT_NOT_FOUND") {
+            return res.status(404).json({ error: error.message });
+        }
+        res.status(500).json({ error: error.message || "一括在庫保存に失敗しました" });
     }
 });
