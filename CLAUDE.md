@@ -225,3 +225,5 @@ npm run test:watch   # Vitest watch モード
 - **エトワールのJANコードで matchProduct しない** — メーカーJANと店舗JANが異なるため、SupplierProductMapping のみで検索する
 - **コレックの原価に標準税率を使わない** — 全品食品なので軽減税率 8% 固定
 - **商品削除は論理削除** — `isActive: false` にする。物理削除すると関連レコードが壊れる
+- **created_at / updated_at を raw SQL の文字列で書かない** — Prisma + SQLite の DateTime は integer（Unixミリ秒）で保存される。raw SQL で `'2026-04-11 23:44:48'` のような文字列を入れると同一カラムに integer と text が混在し、SQLite の型順序規則（数値 < TEXT）で `ORDER BY created_at` が壊れて最新判定を誤る。在庫修正・データ修正スクリプトは必ず **Prisma 経由**（`@default(now())` / `new Date()`）で書く
+- **時刻でソート/最新取得するときは created_at を直接 ORDER BY しない** — 「最新トランザクション」は型非依存の id 基準（`server/datetime.ts` の `LATEST_TX_ORDER_BY`）を使う。raw/診断 SQL で時刻ソートが必要なら同ファイルの `NORMALIZED_CREATED_AT_MS` を使う。JS 側で ms 化したいときは `toEpochMs`、フロント表示は `src/lib/datetime.ts` の `parseTimestamp` を使う
