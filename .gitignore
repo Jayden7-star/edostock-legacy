@@ -24,3 +24,14 @@ dist-ssr
 *.sw?
 
 /generated/prisma
+
+# local database files / diagnostics copies are not committed
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
