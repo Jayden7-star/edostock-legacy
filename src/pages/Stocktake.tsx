@@ -54,6 +54,20 @@ const reasons = [
   { value: "UNKNOWN", label: "不明" },
 ];
 
+const parseActualStockInput = (value: string): number | null => {
+  const normalized = value.normalize("NFKC").trim();
+  if (normalized === "") return null;
+  if (!/^-?\d+$/.test(normalized)) {
+    throw new Error("実在庫は整数で入力してください");
+  }
+
+  const actual = Number(normalized);
+  if (!Number.isInteger(actual)) {
+    throw new Error("実在庫は整数で入力してください");
+  }
+  return actual;
+};
+
 const Stocktake = () => {
   const [stocktakeId, setStocktakeId] = useState<number | null>(null);
   const [detail, setDetail] = useState<StocktakeDetail | null>(null);
@@ -126,17 +140,29 @@ const Stocktake = () => {
   // Save actual stock for a product
   const handleCountUpdate = async (productId: number, actualStock: string, reason?: string) => {
     if (!stocktakeId) return;
-    const actual = actualStock === "" ? null : parseInt(actualStock);
+    let actual: number | null;
     try {
-      await fetch(`/api/stocktakes/${stocktakeId}/counts/${productId}`, {
+      actual = parseActualStockInput(actualStock);
+    } catch (error: any) {
+      toast({ title: "入力エラー", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/stocktakes/${stocktakeId}/counts/${productId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ actualStock: actual, reason }),
       });
+      if (!res.ok) {
+        const data = await res.json();
+        toast({ title: "エラー", description: data.error || "更新に失敗しました", variant: "destructive" });
+        return;
+      }
       fetchDetail(stocktakeId);
     } catch {
-      // silent — user will see unsaved state
+      toast({ title: "接続エラー", description: "サーバーに接続できません", variant: "destructive" });
     }
   };
 

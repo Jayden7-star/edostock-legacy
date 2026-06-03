@@ -1,5 +1,11 @@
 import { Router } from "express";
 import { prisma } from "./index";
+import {
+    completeStocktake,
+    parseActualStockInput,
+    StocktakeInputError,
+    StocktakeServiceError,
+} from "./stocktakes-service";
 
 export const stocktakesRouter = Router();
 
@@ -79,7 +85,7 @@ stocktakesRouter.put("/:id/counts/:productId", async (req, res) => {
         });
         if (!count) return res.status(404).json({ error: "カウント対象が見つかりません" });
 
-        const actual = actualStock !== null && actualStock !== undefined ? parseInt(actualStock) : null;
+        const actual = parseActualStockInput(actualStock);
         const discrepancy = actual !== null ? actual - count.theoreticalStock : null;
 
         const updated = await prisma.inventoryCount.update({
@@ -93,6 +99,9 @@ stocktakesRouter.put("/:id/counts/:productId", async (req, res) => {
         });
         res.json(updated);
     } catch (error: any) {
+        if (error instanceof StocktakeInputError) {
+            return res.status(400).json({ error: error.message });
+        }
         res.status(500).json({ error: error.message || "更新に失敗しました" });
     }
 });
@@ -102,74 +111,30 @@ stocktakesRouter.post("/:id/complete", async (req, res) => {
     const id = parseInt(req.params.id);
     const userId = (req.session as any).userId;
 
-    const stocktake = await prisma.stocktake.findUnique({
-        where: { id },
-        include: { counts: { include: { product: true } } },
-    });
-    if (!stocktake) return res.status(404).json({ error: "棚卸しが見つかりません" });
-    if (stocktake.status === "COMPLETED") return res.status(409).json({ error: "既に確定済みです" });
-
-    // 未入力チェック
-    const unfinished = stocktake.counts.filter((c) => c.actualStock === null);
-    if (unfinished.length > 0) {
-        return res.status(400).json({
-            error: `${unfinished.length}件の商品が未入力です`,
-            unfinishedCount: unfinished.length,
+    try {
+        const completed = await completeStocktake(prisma, id, userId);
+        res.json({
+            success: true,
+            discrepancyCount: completed.discrepancyCount,
+            completedAt: completed.completedAt,
+            alreadyCompleted: completed.alreadyCompleted,
         });
-    }
-
-    // マイナス在庫バリデーション
-    const negativeItems = stocktake.counts.filter((c) => c.actualStock !== null && c.actualStock < 0);
-    if (negativeItems.length > 0) {
-        const names = negativeItems.map((c) => c.product.name).join(", ");
-        return res.status(400).json({
-            error: `実在庫がマイナスの商品があります: ${names}`,
-        });
-    }
-
-    let discrepancyCount = 0;
-
-    // 各商品の在庫を更新し、差異があればトランザクション記録
-    for (const count of stocktake.counts) {
-        if (count.actualStock === null) continue;
-        const diff = count.actualStock - count.theoreticalStock;
-
-        if (diff !== 0) {
-            discrepancyCount++;
-            await prisma.$transaction([
-                prisma.product.update({
-                    where: { id: count.productId },
-                    data: { currentStock: count.actualStock },
-                }),
-                prisma.inventoryTransaction.create({
-                    data: {
-                        productId: count.productId,
-                        type: "STOCKTAKE",
-                        quantity: diff,
-                        stockAfter: count.actualStock,
-                        note: `棚卸し #${id}: ${count.reason !== "NONE" ? count.reason : "差異確認"}`,
-                        userId,
-                    },
-                }),
-            ]);
-        } else {
-            // 差異なしでも currentStock を actualStock に更新（理論在庫の確認）
-            await prisma.product.update({
-                where: { id: count.productId },
-                data: { currentStock: count.actualStock },
-            });
+    } catch (error: any) {
+        if (error instanceof StocktakeServiceError) {
+            if (error.code === "NOT_FOUND") {
+                return res.status(404).json({ error: error.message });
+            }
+            if (error.code === "UNFINISHED") {
+                return res.status(400).json({
+                    error: error.message,
+                    unfinishedCount: error.details?.unfinishedCount,
+                });
+            }
+            if (error.code === "NEGATIVE_STOCK") {
+                return res.status(400).json({ error: error.message });
+            }
         }
+
+        res.status(500).json({ error: error.message || "棚卸し確定に失敗しました" });
     }
-
-    // 棚卸しを完了に更新
-    const completed = await prisma.stocktake.update({
-        where: { id },
-        data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-            discrepancyCount,
-        },
-    });
-
-    res.json({ success: true, discrepancyCount, completedAt: completed.completedAt });
 });
