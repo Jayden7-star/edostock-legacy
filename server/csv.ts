@@ -6,6 +6,7 @@ import {
     CSV_COLUMN_ERROR_MESSAGE,
     CSV_NO_SALES_LINE_MESSAGE,
 } from "./csv-validation.js";
+import { importProductSales } from "./csv-sales-service.js";
 
 export const csvRouter = Router();
 
@@ -54,130 +55,21 @@ csvRouter.post("/", async (req, res) => {
                 }
             }
 
-            // PENDING状態で作成 → トランザクション成功時にCOMPLETEDに更新
-            const csvImport = await prisma.csvImport.create({
-                data: {
-                    filename, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd),
-                    csvType: "PRODUCT_SALES", recordCount: records.length, userId, status: "PENDING",
-                },
+            // P1-1: 確定処理の中核（csvImport 作成・在庫減算・inventory_transactions 作成・
+            // status=COMPLETED 更新・失敗時のゴースト削除）は csv-sales-service.ts に切り出した。
+            // route 側は検証(400) / 重複チェック(409) / レスポンス整形のみを担う。
+            const result = await importProductSales(
+                prisma,
+                { records, filename, periodStart, periodEnd, overrideMap },
+                userId
+            );
+
+            return res.json({
+                success: true,
+                importId: result.importId,
+                recordCount: result.recordCount,
+                autoCreatedCount: result.autoCreatedCount,
             });
-
-            let autoCreatedCount = 0;
-            try {
-            // P1-1: forループ全体を prisma.$transaction でラップ
-            await prisma.$transaction(async (tx) => {
-            for (const record of records) {
-                const janCode = record["商品コード"]?.trim();
-                const productName = record["商品名"]?.trim() || "";
-
-                // 合計行はスキップ
-                if (janCode === "合計" || productName === "合計") continue;
-
-                // 商品コード空欄行 → discount_records に保存
-                if (!janCode || janCode === "") {
-                    const amount = parseInt(record["値引き後計"]) || 0;
-                    if (amount === 0) continue; // 金額0の空行はスキップ
-
-                    const recordType = amount < 0 ? "DISCOUNT" : "SET_ITEM";
-                    const transactionDate = record["取引日時"]?.trim();
-                    await tx.discountRecord.create({
-                        data: {
-                            csvImportId: csvImport.id,
-                            recordType,
-                            itemName: productName,
-                            amount,
-                            transactionId: record["取引ID"]?.trim() || null,
-                            transactionDate: transactionDate ? new Date(transactionDate) : null,
-                            bundleGroupId: record["商品バンドルグループID"]?.trim() || null,
-                        },
-                    });
-                    continue;
-                }
-
-                const quantitySold = parseInt(record["数量"]) || 0;
-                const netSales = parseInt(record["値引き後計"]) || 0;
-                const categoryName = record["部門名"]?.trim() || "";
-
-                let product = await tx.product.findUnique({ where: { janCode } });
-                if (!product) {
-                    const override = overrideMap.get(janCode);
-                    if (override) {
-                        // 手動マッチング: 既存商品のJAN・名前をスマレジのデータに更新
-                        product = await tx.product.update({
-                            where: { id: override.existingProductId },
-                            data: { janCode, name: override.csvProductName },
-                        });
-                    } else {
-                        // 新規商品として登録（従来通り）
-                        let category = await tx.category.findUnique({ where: { name: categoryName } });
-                        if (!category) {
-                            category = await tx.category.create({
-                                data: { name: categoryName, displayName: categoryName.replace("☆　", ""), isFood: !categoryName.startsWith("☆"), displayOrder: 99 },
-                            });
-                        }
-                        product = await tx.product.create({
-                            data: {
-                                janCode, name: productName, categoryId: category.id,
-                                color: record["カラー"]?.trim() || null, size: record["サイズ"]?.trim() || null,
-                                sellingPrice: quantitySold > 0 ? Math.round(netSales / quantitySold) : 0,
-                                isAutoCreated: true,
-                                needsReview: true,
-                            },
-                        });
-                        autoCreatedCount++;
-                    }
-                }
-
-                await tx.salesRecord.create({
-                    data: { productId: product.id, csvImportId: csvImport.id, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd), quantitySold, netSales },
-                });
-
-                // 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
-                if (product.currentStock !== null) {
-                    // P0-2: マイナス在庫ガード
-                    const rawStock = product.currentStock - quantitySold;
-                    const clamped = rawStock < 0;
-                    const newStock = Math.max(0, rawStock);
-
-                    if (clamped) {
-                        console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
-                    }
-
-                    await tx.product.update({
-                        where: { id: product.id },
-                        data: { currentStock: newStock },
-                    });
-
-                    // P0-1: InventoryTransaction 作成
-                    const noteBase = `売上CSV: ${csvImport.filename || filename}`;
-                    await tx.inventoryTransaction.create({
-                        data: {
-                            productId: product.id,
-                            type: "SALE_CSV",
-                            quantity: quantitySold,
-                            stockAfter: newStock,
-                            note: clamped ? `${noteBase} ⚠️ マイナス在庫を0にクランプ` : noteBase,
-                            csvImportId: csvImport.id,
-                            userId,
-                        },
-                    });
-                }
-            }
-            }, { timeout: 30000 });
-
-            // トランザクション成功 → COMPLETEDに更新
-            await prisma.csvImport.update({
-                where: { id: csvImport.id },
-                data: { status: "COMPLETED" },
-            });
-
-            return res.json({ success: true, importId: csvImport.id, recordCount: records.length, autoCreatedCount });
-            } catch (txError) {
-                // トランザクション失敗 → ゴーストレコード削除
-                console.error("売上CSVトランザクション失敗、PENDINGレコードを削除:", txError);
-                await prisma.csvImport.delete({ where: { id: csvImport.id } }).catch(() => {});
-                throw txError;
-            }
         }
 
         if (csvType === "MONTHLY_SALES") {
