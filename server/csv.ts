@@ -291,7 +291,7 @@ csvRouter.post("/preview", async (req, res) => {
                         take: 10,
                     });
                 }
-                unmatched.push({ janCode, productName, soldQty, candidates, willAutoRegister: true });
+                unmatched.push({ janCode, productName, soldQty, candidates });
             }
         }
 

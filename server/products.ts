@@ -4,10 +4,17 @@ import { prisma, requireAdmin } from "./index";
 export const productsRouter = Router();
 export const supplierMappingsRouter = Router();
 
+function firstQuery(value: unknown): string | undefined {
+    if (Array.isArray(value)) {
+        return typeof value[0] === "string" ? value[0] : undefined;
+    }
+    return typeof value === "string" ? value : undefined;
+}
+
 productsRouter.get("/", async (req, res) => {
-    const search = req.query.search as string | undefined;
-    const department = req.query.department as string | undefined;
-    const isActiveParam = req.query.isActive as string | undefined;
+    const search = firstQuery(req.query.search);
+    const department = firstQuery(req.query.department);
+    const isActiveParam = firstQuery(req.query.isActive);
     const deptFilter = department && department !== "ALL" ? { category: { department } } : {};
     const isActiveFilter = isActiveParam === "all" ? {} : { isActive: isActiveParam === "false" ? false : true };
     const products = await prisma.product.findMany({
@@ -199,7 +206,7 @@ productsRouter.put("/bulk-stock", requireAdmin, async (req, res) => {
 
 // PUT /api/products/:id — 商品編集（管理者のみ）
 productsRouter.put("/:id", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     const { janCode, name, categoryId, costPrice, sellingPrice, reorderPoint, optimalStock, supplyType, salesType, color, size,
         optimalStock01, optimalStock02, optimalStock03, optimalStock04, optimalStock05, optimalStock06,
         optimalStock07, optimalStock08, optimalStock09, optimalStock10, optimalStock11, optimalStock12 } = req.body;
@@ -246,7 +253,7 @@ productsRouter.put("/:id", requireAdmin, async (req, res) => {
 
 // DELETE /api/products/:id — 論理削除（管理者のみ）
 productsRouter.delete("/:id", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     try {
         await prisma.product.update({ where: { id }, data: { isActive: false } });
         res.json({ success: true });
@@ -258,7 +265,7 @@ productsRouter.delete("/:id", requireAdmin, async (req, res) => {
 
 // PATCH /api/products/:id/activate — 有効化（管理者のみ）
 productsRouter.patch("/:id/activate", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     try {
         const product = await prisma.product.update({
             where: { id },
@@ -274,7 +281,7 @@ productsRouter.patch("/:id/activate", requireAdmin, async (req, res) => {
 
 // PATCH /api/products/:id/review — 確認済みにする（管理者のみ）
 productsRouter.patch("/:id/review", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     const { reorderPoint } = req.body;
     try {
         const data: Record<string, any> = { needsReview: false };
@@ -297,7 +304,7 @@ productsRouter.patch("/:id/review", requireAdmin, async (req, res) => {
 
 // GET /api/supplier-mappings — マッピング一覧（?supplier= でフィルタ可能）
 supplierMappingsRouter.get("/", async (req, res) => {
-    const supplier = req.query.supplier as string | undefined;
+    const supplier = firstQuery(req.query.supplier);
     try {
         const mappings = await prisma.supplierProductMapping.findMany({
             where: supplier ? { supplierName: supplier } : {},
@@ -312,7 +319,7 @@ supplierMappingsRouter.get("/", async (req, res) => {
 
 // PUT /api/supplier-mappings/:id — 紐づけ先の変更（管理者のみ）
 supplierMappingsRouter.put("/:id", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     const { productId } = req.body;
     if (!productId) {
         return res.status(400).json({ error: "紐づけ先の商品IDは必須です" });
@@ -332,7 +339,7 @@ supplierMappingsRouter.put("/:id", requireAdmin, async (req, res) => {
 
 // DELETE /api/supplier-mappings/:id — マッピング削除（管理者のみ）
 supplierMappingsRouter.delete("/:id", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(firstQuery(req.params.id) ?? "", 10);
     try {
         await prisma.supplierProductMapping.delete({ where: { id } });
         res.json({ success: true });

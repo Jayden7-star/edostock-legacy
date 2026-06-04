@@ -77,6 +77,8 @@ interface PurchaseMatchResult {
   csvName: string;
   color: string;
   size: string;
+  num: number;
+  wholesaleUnit: number;
   quantity: number;
   unitCost: number;
   subtotal: number;
