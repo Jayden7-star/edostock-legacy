@@ -20,7 +20,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { parseActualStockClient } from "@/lib/inventory-input";
+import { parseActualStockClient, parseStockInClient } from "@/lib/inventory-input";
 import { useSearchParams } from "react-router-dom";
 
 interface Product {
@@ -358,18 +358,34 @@ const Inventory = () => {
   const adjustValidation = modalType === "adjust" ? parseActualStockClient(quantity) : null;
   const adjustInvalid = modalType === "adjust" && !adjustValidation?.ok;
 
+  // 入庫（加算）は別規則: 正の整数（1以上）のみ。空欄時はエラー表示せず確定を無効化するだけ。
+  const purchaseValidation = modalType === "purchase" ? parseStockInClient(quantity) : null;
+  const purchaseInvalid = modalType === "purchase" && !purchaseValidation?.ok;
+
   // モーダル下のヒント/エラー文言（discriminated union を if/else で確実に絞り込む）
-  let adjustHint: { tone: "error" | "info"; text: string } | null = null;
+  let modalHint: { tone: "error" | "info"; text: string } | null = null;
   if (modalType === "adjust" && adjustValidation) {
     if (adjustValidation.ok) {
       if (selectedProduct) {
-        adjustHint = {
+        modalHint = {
           tone: "info",
           text: `差分 ${formatDiff(adjustValidation.value - selectedProduct.currentStock)} ／ 確定すると未保存の変更として保持されます（下部の「一括保存」でまとめて保存）`,
         };
       }
     } else {
-      adjustHint = { tone: "error", text: adjustValidation.error };
+      modalHint = { tone: "error", text: adjustValidation.error };
+    }
+  } else if (modalType === "purchase" && purchaseValidation) {
+    if (purchaseValidation.ok) {
+      if (selectedProduct) {
+        modalHint = {
+          tone: "info",
+          text: `入庫 +${purchaseValidation.value} ／ 保存後の在庫: ${selectedProduct.currentStock + purchaseValidation.value}`,
+        };
+      }
+    } else if (quantity !== "") {
+      // 空欄はヒントを出さず（確定無効のみ）、不正値入力時のみエラー文言を出す
+      modalHint = { tone: "error", text: purchaseValidation.error };
     }
   }
 
@@ -462,7 +478,10 @@ const Inventory = () => {
   };
 
   const handleSubmit = async () => {
-    if (!selectedProduct || !quantity) return;
+    if (!selectedProduct) return;
+    // 入庫数は正の整数（1以上）のみ許可。小数・負数・非数字・空欄はここで弾く（サーバ側でも再検証）。
+    const parsed = parseStockInClient(quantity);
+    if (!parsed.ok) return; // ボタンは無効化済みだが二重ガード
     setSubmitting(true);
     try {
       const res = await fetch("/api/inventory", {
@@ -471,7 +490,7 @@ const Inventory = () => {
         credentials: "include",
         body: JSON.stringify({
           productId: selectedProduct.id,
-          quantity: parseInt(quantity),
+          quantity: parsed.value,
           note: note || undefined,
           type: modalType === "purchase" ? "PURCHASE" : "ADJUSTMENT",
         }),
@@ -1057,12 +1076,12 @@ const Inventory = () => {
                 onChange={(e) => setQuantity(e.target.value)}
                 className={cn(
                   "bg-secondary/50 border-border/50 h-11",
-                  adjustInvalid && quantity !== "" && "border-primary/60"
+                  (adjustInvalid || purchaseInvalid) && quantity !== "" && "border-primary/60"
                 )}
               />
-              {adjustHint && (
-                <p className={cn("text-xs", adjustHint.tone === "error" ? "text-primary" : "text-muted-foreground")}>
-                  {adjustHint.text}
+              {modalHint && (
+                <p className={cn("text-xs", modalHint.tone === "error" ? "text-primary" : "text-muted-foreground")}>
+                  {modalHint.text}
                 </p>
               )}
             </div>
@@ -1082,7 +1101,7 @@ const Inventory = () => {
               <Button
                 className="bg-primary hover:bg-primary/90"
                 onClick={handleSubmit}
-                disabled={submitting || !quantity}
+                disabled={submitting || purchaseInvalid}
               >
                 {submitting ? "処理中..." : "確定"}
               </Button>

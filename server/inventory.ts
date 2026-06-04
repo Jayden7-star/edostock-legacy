@@ -5,6 +5,11 @@ import {
     InventoryAdjustInputError,
     InventoryAdjustServiceError,
 } from "./inventory-adjust-service.js";
+import {
+    recordStockIn,
+    StockInInputError,
+    StockInServiceError,
+} from "./inventory-stockin-service.js";
 
 export const inventoryRouter = Router();
 
@@ -102,6 +107,23 @@ inventoryRouter.get("/", async (req, res) => {
 inventoryRouter.post("/", async (req, res) => {
     const { productId, quantity, note, type = "PURCHASE" } = req.body;
     const userId = (req.session as any).userId;
+
+    // 入庫（仕入による現在庫への加算）は厳格バリデーション付きの自己完結サービスに委譲する。
+    // 直接変更（type === "ADJUSTMENT"）は従来どおり下のブロックでインライン処理する（挙動を据え置き）。
+    if (type !== "ADJUSTMENT") {
+        try {
+            const { newStock } = await recordStockIn(prisma, { productId, quantity, note }, userId);
+            return res.json({ success: true, newStock });
+        } catch (error: any) {
+            if (error instanceof StockInInputError) {
+                return res.status(400).json({ error: error.message });
+            }
+            if (error instanceof StockInServiceError && error.code === "PRODUCT_NOT_FOUND") {
+                return res.status(404).json({ error: error.message });
+            }
+            return res.status(500).json({ error: error.message || "入庫処理に失敗しました" });
+        }
+    }
 
     try {
         const newStock = await prisma.$transaction(async (tx) => {
