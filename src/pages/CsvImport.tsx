@@ -77,6 +77,8 @@ interface PurchaseMatchResult {
   csvName: string;
   color: string;
   size: string;
+  num: number;
+  wholesaleUnit: number;
   quantity: number;
   unitCost: number;
   subtotal: number;
@@ -268,7 +270,7 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ records: rawRecords }),
+      body: JSON.stringify({ records: rawRecords, csvType }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -325,7 +327,9 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
   const parseFile = (f: File) => {
   const reader = new FileReader();
   reader.onload = (e) => {
-    const text = e.target?.result as string;
+    const raw = (e.target?.result as string) || "";
+    // UTF-8 BOM を除去（readAsText(UTF-8) で通常消えるが環境差に備える）
+    const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
     Papa.parse(text, {
       header: true,
       skipEmptyLines: true,
@@ -333,6 +337,27 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
         const records = result.data as Record<string, string>[];
         const headers = result.meta.fields || [];
         const type = detectCsvType(headers);
+
+        // P0: 売上CSV(PRODUCT_SALES)で必須列を認識できない（文字化け/列欠落）場合は
+        // step1へ進めず即座に拒否し、previewで見えずconfirmで空振りする状態を防ぐ。
+        // server/csv-validation.ts の PRODUCT_SALES_REQUIRED_COLUMNS と同一に保つこと。
+        const requiredColumns = ["商品コード", "商品名", "数量", "値引き後計", "部門名"];
+        if (type === "PRODUCT_SALES") {
+          const headerSet = new Set(
+            headers.map((h) => (h.charCodeAt(0) === 0xfeff ? h.slice(1) : h).trim())
+          );
+          const missing = requiredColumns.filter((c) => !headerSet.has(c));
+          if (missing.length > 0) {
+            toast({
+              title: "CSVを読み込めません",
+              description: "CSVの列名を認識できません。スマレジの取引データCSVをUTF-8形式でアップロードしてください。",
+              variant: "destructive",
+            });
+            setFile(null);
+            return;
+          }
+        }
+
         setCsvType(type);
         setRawRecords(records);
 
@@ -378,7 +403,8 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
         },
       });
     };
-    reader.readAsText(f, "Shift_JIS");
+    // 売上CSVは UTF-8 / UTF-8(BOM付) で読む。将来のShift_JIS対応は別タスク。
+    reader.readAsText(f, "UTF-8");
   };
 
   const handleDrop = (e: React.DragEvent) => {

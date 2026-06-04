@@ -1,5 +1,11 @@
 import { Router } from "express";
 import { prisma } from "./index.js";
+import {
+    findMissingProductSalesColumns,
+    hasValidSalesLine,
+    CSV_COLUMN_ERROR_MESSAGE,
+    CSV_NO_SALES_LINE_MESSAGE,
+} from "./csv-validation.js";
 
 export const csvRouter = Router();
 
@@ -17,6 +23,18 @@ csvRouter.post("/", async (req, res) => {
         }
 
         if (csvType === "PRODUCT_SALES") {
+            // P0: 必須列チェック。文字コード不一致/列欠落で全行 undefined になり、
+            // 「130件取り込んだが在庫が1件も減らない」サイレント成功を防ぐ。
+            // csvImport を作る前に弾くので、空振りCOMPLETEDが残って再取込が409になる二次被害も起きない。
+            const missingColumns = findMissingProductSalesColumns(records);
+            if (missingColumns.length > 0) {
+                return res.status(400).json({ error: CSV_COLUMN_ERROR_MESSAGE });
+            }
+            // P0: 有効な売上明細が0件なら成功扱いにしない。
+            if (!hasValidSalesLine(records)) {
+                return res.status(400).json({ error: CSV_NO_SALES_LINE_MESSAGE });
+            }
+
             // 重複チェック: 同一ファイル名+期間のCOMPLETED済みレコードがあれば409
             if (filename) {
                 const existing = await prisma.csvImport.findFirst({
@@ -244,7 +262,20 @@ csvRouter.post("/", async (req, res) => {
 
 csvRouter.post("/preview", async (req, res) => {
     try {
-        const { records } = req.body;
+        const { records, csvType } = req.body;
+
+        // P0: confirm と同じ必須列/明細チェックを共有し、previewで問題が見えず
+        // confirmで空振りする状態を防ぐ。MONTHLY_SALES も preview を通るため
+        // PRODUCT_SALES のときだけ適用して月次取込を壊さない。
+        if (csvType === "PRODUCT_SALES") {
+            const missingColumns = findMissingProductSalesColumns(records);
+            if (missingColumns.length > 0) {
+                return res.status(400).json({ error: CSV_COLUMN_ERROR_MESSAGE });
+            }
+            if (!hasValidSalesLine(records)) {
+                return res.status(400).json({ error: CSV_NO_SALES_LINE_MESSAGE });
+            }
+        }
 
         // JANコードごとに集計 + 値引き・セット売り集計
         const aggregated: Record<string, { productName: string; soldQty: number }> = {};
@@ -291,7 +322,7 @@ csvRouter.post("/preview", async (req, res) => {
                         take: 10,
                     });
                 }
-                unmatched.push({ janCode, productName, soldQty, candidates, willAutoRegister: true });
+                unmatched.push({ janCode, productName, soldQty, candidates });
             }
         }
 
