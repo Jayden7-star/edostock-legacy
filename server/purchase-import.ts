@@ -3,6 +3,7 @@ import { prisma } from "./index";
 import multer from "multer";
 import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
+import { parseCorecLines, getAmountInvalidItems } from "./corec-parser";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -263,13 +264,6 @@ purchaseImportRouter.post("/etoile/confirm", async (req, res) => {
 //  コレック COREC PDF パーサー
 // ==================================================
 
-function normalizeJan(raw: string): string {
-    return raw
-        .replace(/[\s\u3000]/g, "")
-        .replace(/[-‐‑‒–—―ー－]/g, "")
-        .replace(/[^\d]/g, "");
-}
-
 async function extractPdfText(buffer: Buffer): Promise<string[]> {
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
     try {
@@ -291,124 +285,6 @@ async function extractPdfText(buffer: Buffer): Promise<string[]> {
     }
 }
 
-function parseCorecLines(pageTexts: string[]) {
-    const results: Array<{
-        hinban: string; productName: string; janCode: string;
-        spec: string; quantity: number; unitPrice: number; subtotal: number;
-    }> = [];
-
-    // OOM対策: pageTexts.join(" ") による全ページ連結を廃止し、ページ単位でパースする。
-    // 全ページを 1 本の巨大文字列に結合すると、fullText とトークン配列が同時にヒープ常駐し
-    // 正規表現の backtracking でピーク RSS が膨らむため、各ステージ内でページを順次処理する。
-    // 3 段フォールバック（Stage1: lineRegex / Stage2: token-based / Stage3: orderRegex）の
-    // ドキュメント全体での順序は維持する。
-
-    // Stage 1: COREC 注文行の正規表現
-    // "233563   たらこ   4970974- 101026   70g 築地   10   ¥232   20   対 象   ¥4,640"
-    // JANコードが改行をまたぐ場合に対応: "4970974‐10\n0661" → \d+(?:\n\d+)? でキャプチャ
-    const lineRegex = /(\d{6})\s+([\u3000-\u9FFF\uF900-\uFAFF\w（）\s]+?)\s+(4970974[\s\-‐‑‒–—―ー－]*\d+(?:\n\d+)?)\s+(.+?)\s+(\d+)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
-    for (const pageText of pageTexts) {
-        lineRegex.lastIndex = 0;
-        let match;
-        while ((match = lineRegex.exec(pageText)) !== null) {
-            const janCode = normalizeJan(match[3]);
-            results.push({
-                hinban: match[1],
-                productName: match[2].trim(),
-                janCode: janCode.length >= 13 ? janCode.substring(0, 13) : janCode,
-                spec: match[4].trim(),
-                quantity: parseInt(match[7]) || 0,
-                unitPrice: parseInt(match[6].replace(/,/g, "")) || 0,
-                subtotal: parseInt(match[8].replace(/,/g, "")) || 0,
-            });
-        }
-    }
-
-    // Stage 2: トークンベースのフォールバック（ページ単位）
-    if (results.length === 0) {
-        for (const pageText of pageTexts) {
-            const tokens = pageText.split(/\s+/);
-            for (let i = 0; i < tokens.length; i++) {
-                if (!/^\d{6}$/.test(tokens[i])) continue;
-                const hinban = tokens[i];
-
-                const nameTokens: string[] = [];
-                let j = i + 1;
-                while (j < tokens.length && !tokens[j].startsWith("4970974")) {
-                    nameTokens.push(tokens[j]);
-                    j++;
-                }
-                if (j >= tokens.length) continue;
-
-                const janTokens: string[] = [];
-                while (j < tokens.length) {
-                    const cleaned = tokens[j].replace(/[\s\-‐‑‒–—―ー－]/g, "");
-                    if (/^\d+$/.test(cleaned) || tokens[j].startsWith("4970974")) {
-                        janTokens.push(tokens[j]);
-                        j++;
-                        if (normalizeJan(janTokens.join("")).length >= 13) break;
-                    } else break;
-                }
-                const janCode = normalizeJan(janTokens.join(""));
-
-                let quantity = 0, unitPrice = 0, subtotal = 0;
-                for (let k = j; k < Math.min(j + 12, tokens.length); k++) {
-                    const costMatch = tokens[k].match(/^[¥￥]([\d,]+)$/);
-                    if (costMatch && unitPrice === 0) {
-                        unitPrice = parseInt(costMatch[1].replace(/,/g, "")) || 0;
-                        if (k + 1 < tokens.length && /^\d+$/.test(tokens[k + 1])) {
-                            quantity = parseInt(tokens[k + 1]) || 0;
-                        }
-                    } else if (costMatch && unitPrice > 0 && k > j + 3) {
-                        subtotal = parseInt(costMatch[1].replace(/,/g, "")) || 0;
-                    }
-                }
-
-                if (janCode.length >= 7 && quantity > 0) {
-                    results.push({
-                        hinban,
-                        productName: nameTokens.join(" ").trim(),
-                        janCode: janCode.substring(0, 13),
-                        spec: "",
-                        quantity, unitPrice, subtotal,
-                    });
-                }
-            }
-        }
-    }
-
-    // Stage 3: 発注書フォーマット（JANコードなし、ページ単位）
-    // パターン: 品番(6桁) + 商品名 + ¥単価 + 数量 + 対象 + ¥金額
-    if (results.length === 0) {
-        const orderRegex = /(\d{6})\s+(.+?)\s+[¥￥]([\d,]+)\s+(\d+)\s+対\s*象\s+[¥￥]([\d,]+)/g;
-        for (const pageText of pageTexts) {
-            orderRegex.lastIndex = 0;
-            let orderMatch;
-            while ((orderMatch = orderRegex.exec(pageText)) !== null) {
-                const hinban = orderMatch[1];
-                const productName = orderMatch[2].replace(/\s{2,}/g, " ").trim();
-                const unitPrice = parseInt(orderMatch[3].replace(/,/g, "")) || 0;
-                const quantity = parseInt(orderMatch[4]) || 0;
-                const subtotal = parseInt(orderMatch[5].replace(/,/g, "")) || 0;
-
-                if (quantity > 0) {
-                    results.push({
-                        hinban,
-                        productName,
-                        janCode: "",  // JANコードなし — 品番でフォールバック検索
-                        spec: "",
-                        quantity,
-                        unitPrice,
-                        subtotal,
-                    });
-                }
-            }
-        }
-    }
-
-    return results;
-}
-
 /**
  * parseCorecPDF — コレックPDFバッファを受け取り、商品行をパースして返す
  * pdf-parse でテキスト抽出 → 品番(6桁)開始行を検出 → JAN正規化 → 数量抽出
@@ -420,7 +296,7 @@ function parseCorecLines(pageTexts: string[]) {
 async function parseCorecPDF(buffer: Buffer): Promise<{
     items: Array<{
         hinban: string; productName: string; janCode: string;
-        quantity: number; unitPrice: number;
+        quantity: number; unitPrice: number; subtotal: number; amountValid: boolean;
     }>;
     pageTexts: string[];
 }> {
@@ -439,6 +315,8 @@ async function parseCorecPDF(buffer: Buffer): Promise<{
             janCode: l.janCode,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
+            subtotal: l.subtotal,
+            amountValid: l.amountValid,
         }));
         return { items, pageTexts };
     } catch (error) {
@@ -524,6 +402,8 @@ purchaseImportRouter.post("/corec/parse", upload.single("file"), async (req: any
                 quantity: p.quantity,
                 unitPrice: p.unitPrice,
                 subtotal: p.quantity * p.unitPrice,
+                // 発注単価×数量=発注金額 の検算結果（false=PDF上の発注金額と不一致＝要確認）
+                amountValid: p.amountValid,
                 matched: !!product,
                 matchedProductId: product?.id || null,
                 matchedProductName: product?.name || null,
@@ -547,6 +427,20 @@ purchaseImportRouter.post("/corec/confirm", async (req, res) => {
     const { items, filename, mappings } = req.body;
     if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: "確定データがありません" });
+    }
+
+    // 安全弁: 発注単価×数量=発注金額 の検算に失敗した行（amountValid===false）が
+    // 1件でも含まれる場合は、誤った数量で在庫加算する事故を防ぐため処理全体を中断する。
+    // （在庫書き込み前にチェックする。amountValid 未指定の item は従来クライアント互換のため対象外）
+    const invalidRows = getAmountInvalidItems(items);
+    if (invalidRows.length > 0) {
+        const labels = invalidRows
+            .map((it: any) => it.productName || it.janCode || it.hinban || "?")
+            .join("、");
+        return res.status(400).json({
+            error: `発注単価×数量と発注金額が一致しない行があります（${invalidRows.length}件: ${labels}）。PDFの読み取り結果を確認してください。`,
+            invalidRows,
+        });
     }
 
     try {
