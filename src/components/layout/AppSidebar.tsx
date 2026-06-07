@@ -6,6 +6,7 @@ import {
   Package,
   FileDown,
   Bell,
+  FileSearch,
   ClipboardList,
   BarChart3,
   TrendingUp,
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
   { label: "在庫一覧", icon: Package, path: "/inventory" },
   { label: "CSVインポート", icon: FileDown, path: "/import" },
   { label: "発注アラート", icon: Bell, path: "/alerts" },
+  { label: "自動登録台帳", icon: FileSearch, path: "/auto-created" },
   { label: "棚卸し", icon: ClipboardList, path: "/stocktake" },
   { label: "適正在庫", icon: Target, path: "/optimal-stock" },
   {
