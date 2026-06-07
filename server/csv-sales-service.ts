@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { computeContentHash } from "./csv-dedup.js";
 
 // 売上CSV（PRODUCT_SALES）確定処理の中核を、route handler から切り出した自己完結モジュール。
 // prisma を引数で受け取り index.ts に依存しないため、csv.ts ↔ index.ts の循環に巻き込まれない
@@ -26,12 +27,44 @@ export interface ProductSalesImportInput {
     periodStart: string | number | Date;
     periodEnd: string | number | Date;
     overrideMap?: Map<string, ProductSalesMatchOverride>;
+    // 内容ハッシュ。route 側で重複チェック用に算出済みなら渡す（再計算を避ける）。
+    // 省略時はこのサービスが records から算出する（サービス単体呼び出し/テスト互換）。
+    contentHash?: string | null;
+}
+
+// 在庫不足で減算を0にクランプした明細。完了画面に「要確認」として表示する。
+// 監査証跡は inventory_transactions.note のクランプマーカーにも永続化される（従来どおり）。
+export interface ClampedItem {
+    productName: string;
+    janCode: string | null;
+    csvQuantity: number;
+    stockBefore: number;
+    stockAfter: number;
+    shortage: number;
+    importId: number;
+    needsConfirmation: boolean;
+}
+
+// 取込結果サマリー。完了画面に表示する。永続化はしない（in-memory 集計）。
+export interface ProductSalesImportSummary {
+    totalCsvRows: number;        // CSV全行数(= recordCount)
+    salesRows: number;           // 処理した有効な売上明細行数
+    totalQuantitySold: number;   // 売上数量の合計
+    successfulDeductions: number;// 在庫が正常に減算された商品件数(クランプを除く)
+    stockUnsetSkipped: number;   // 在庫未設定(null)で減算をスキップした商品件数
+    clampedCount: number;        // 在庫不足で0にクランプした件数
+    unknownRows: number;         // 未マッチで自動登録された商品件数(= autoCreatedCount)
+    status: string;              // "COMPLETED"
 }
 
 export interface ProductSalesImportResult {
     importId: number;
     recordCount: number;
     autoCreatedCount: number;
+    contentHash: string | null;
+    importedAt: Date;
+    summary: ProductSalesImportSummary;
+    clampedItems: ClampedItem[];
 }
 
 /**
@@ -48,16 +81,25 @@ export async function importProductSales(
 ): Promise<ProductSalesImportResult> {
     const { records, filename, periodStart, periodEnd } = input;
     const overrideMap = input.overrideMap ?? new Map<string, ProductSalesMatchOverride>();
+    // route 側で算出済みなら再利用、なければここで算出（決定的なので結果は一致する）。
+    const contentHash = input.contentHash ?? computeContentHash(records);
 
     // PENDING状態で作成 → トランザクション成功時にCOMPLETEDに更新
     const csvImport = await db.csvImport.create({
         data: {
             filename, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd),
             csvType: "PRODUCT_SALES", recordCount: records.length, userId, status: "PENDING",
+            contentHash,
         },
     });
 
     let autoCreatedCount = 0;
+    // 完了画面用の集計（DB永続化はしない）
+    let salesRows = 0;
+    let totalQuantitySold = 0;
+    let successfulDeductions = 0;
+    let stockUnsetSkipped = 0;
+    const clampedItems: ClampedItem[] = [];
     try {
         // P1-1: forループ全体 + COMPLETED更新を prisma.$transaction でラップ
         await db.$transaction(async (tx) => {
@@ -92,6 +134,10 @@ export async function importProductSales(
                 const quantitySold = parseInt(record["数量"]) || 0;
                 const netSales = parseInt(record["値引き後計"]) || 0;
                 const categoryName = record["部門名"]?.trim() || "";
+
+                // 有効な売上明細行（合計行/値引き行を除いたもの）
+                salesRows++;
+                totalQuantitySold += quantitySold;
 
                 let product = await tx.product.findUnique({ where: { janCode } });
                 if (!product) {
@@ -130,12 +176,25 @@ export async function importProductSales(
                 // 在庫数が設定されている商品のみ減算（null = 棚卸し未実施はスキップ）
                 if (product.currentStock !== null) {
                     // P0-2: マイナス在庫ガード
-                    const rawStock = product.currentStock - quantitySold;
+                    const stockBefore = product.currentStock;
+                    const rawStock = stockBefore - quantitySold;
                     const clamped = rawStock < 0;
                     const newStock = Math.max(0, rawStock);
 
                     if (clamped) {
                         console.warn(`⚠️ マイナス在庫クランプ: ${product.name} (ID:${product.id}) 計算値=${rawStock} → 0`);
+                        clampedItems.push({
+                            productName: product.name,
+                            janCode: product.janCode,
+                            csvQuantity: quantitySold,
+                            stockBefore,
+                            stockAfter: newStock,
+                            shortage: quantitySold - stockBefore,
+                            importId: csvImport.id,
+                            needsConfirmation: true,
+                        });
+                    } else {
+                        successfulDeductions++;
                     }
 
                     await tx.product.update({
@@ -156,6 +215,9 @@ export async function importProductSales(
                             userId,
                         },
                     });
+                } else {
+                    // 棚卸し未実施(null)で減算をスキップした件数
+                    stockUnsetSkipped++;
                 }
             }
 
@@ -168,7 +230,26 @@ export async function importProductSales(
             });
         }, { timeout: 30000 });
 
-        return { importId: csvImport.id, recordCount: records.length, autoCreatedCount };
+        const summary: ProductSalesImportSummary = {
+            totalCsvRows: records.length,
+            salesRows,
+            totalQuantitySold,
+            successfulDeductions,
+            stockUnsetSkipped,
+            clampedCount: clampedItems.length,
+            unknownRows: autoCreatedCount,
+            status: "COMPLETED",
+        };
+
+        return {
+            importId: csvImport.id,
+            recordCount: records.length,
+            autoCreatedCount,
+            contentHash,
+            importedAt: csvImport.importedAt,
+            summary,
+            clampedItems,
+        };
     } catch (txError) {
         // トランザクション失敗 → ゴーストレコード削除
         // $transaction 内の子行はすべてロールバック済みのため、この delete は FK 制約に阻まれず成功する。

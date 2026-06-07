@@ -102,6 +102,7 @@ model CsvImport {
   recordCount Int      @map("record_count")
   userId      Int      @map("user_id")
   status      String   @default("PENDING")
+  contentHash String?  @map("content_hash") // 内容ハッシュ(SHA-256)。リネーム耐性のある重複検知に使用。既存行はNULL。
   importedAt  DateTime @default(now()) @map("imported_at")
 
   user            User                   @relation(fields: [userId], references: [id])

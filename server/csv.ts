@@ -7,6 +7,7 @@ import {
     CSV_NO_SALES_LINE_MESSAGE,
 } from "./csv-validation.js";
 import { importProductSales } from "./csv-sales-service.js";
+import { computeContentHash, findContentHashDuplicate } from "./csv-dedup.js";
 
 export const csvRouter = Router();
 
@@ -36,23 +37,24 @@ csvRouter.post("/", async (req, res) => {
                 return res.status(400).json({ error: CSV_NO_SALES_LINE_MESSAGE });
             }
 
-            // 重複チェック: 同一ファイル名+期間のCOMPLETED済みレコードがあれば409
-            if (filename) {
-                const existing = await prisma.csvImport.findFirst({
-                    where: {
-                        filename,
-                        csvType: "PRODUCT_SALES",
-                        periodStart: new Date(periodStart),
-                        periodEnd: new Date(periodEnd),
-                        status: "COMPLETED",
+            // 重複チェック(強化): 内容ハッシュで COMPLETED 済みを検知し 409 でハードブロックする。
+            // ファイル名ベースの検知（リネームですり抜ける／別内容でも同名なら誤ブロック）を置換。
+            // ※このパスでは「再取込許可」ボタンは出さない（ハードブロック）。
+            const contentHash = computeContentHash(records);
+            const dupByHash = await findContentHashDuplicate(prisma, {
+                contentHash,
+                csvType: "PRODUCT_SALES",
+            });
+            if (dupByHash) {
+                console.log(`売上CSV重複検知(内容一致): importId=${dupByHash.id} 既存ファイル名=${dupByHash.filename}`);
+                return res.status(409).json({
+                    error: `この売上CSVは既にインポート済みです（内容が一致：${dupByHash.filename} / ${dupByHash.importedAt.toLocaleString("ja-JP")}）。ファイル名が違っても内容で検知しています。`,
+                    duplicate: {
+                        id: dupByHash.id,
+                        filename: dupByHash.filename,
+                        importedAt: dupByHash.importedAt,
                     },
                 });
-                if (existing) {
-                    console.log(`売上CSV重複検知: ${filename} (importId: ${existing.id})`);
-                    return res.status(409).json({
-                        error: `この売上CSVは既にインポート済みです（ファイル名: ${filename}）`,
-                    });
-                }
             }
 
             // P1-1: 確定処理の中核（csvImport 作成・在庫減算・inventory_transactions 作成・
@@ -60,7 +62,7 @@ csvRouter.post("/", async (req, res) => {
             // route 側は検証(400) / 重複チェック(409) / レスポンス整形のみを担う。
             const result = await importProductSales(
                 prisma,
-                { records, filename, periodStart, periodEnd, overrideMap },
+                { records, filename, periodStart, periodEnd, overrideMap, contentHash },
                 userId
             );
 
@@ -69,6 +71,14 @@ csvRouter.post("/", async (req, res) => {
                 importId: result.importId,
                 recordCount: result.recordCount,
                 autoCreatedCount: result.autoCreatedCount,
+                contentHash: result.contentHash,
+                importedAt: result.importedAt,
+                periodStart,
+                periodEnd,
+                filename,
+                duplicateStatus: "none",
+                summary: result.summary,
+                clampedItems: result.clampedItems,
             });
         }
 
