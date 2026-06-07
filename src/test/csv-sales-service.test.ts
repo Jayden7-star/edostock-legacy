@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { importProductSales } from "../../server/csv-sales-service";
+import { computeContentHash, findContentHashDuplicate } from "../../server/csv-dedup";
 
 // P1: 売上CSV（PRODUCT_SALES）確定処理で、在庫減算・inventory_transactions 作成・
 // sales_records 作成・csvImport.status=COMPLETED 更新が「同一 $transaction」に収まり、
@@ -85,7 +86,25 @@ describe("importProductSales (PRODUCT_SALES 確定 / $transaction)", () => {
             userId
         );
 
-        expect(result).toEqual({ importId: expect.any(Number), recordCount: 1, autoCreatedCount: 0 });
+        expect(result).toMatchObject({ importId: expect.any(Number), recordCount: 1, autoCreatedCount: 0 });
+
+        // サマリーが正しく集計されている
+        expect(result.summary).toMatchObject({
+            totalCsvRows: 1,
+            salesRows: 1,
+            totalQuantitySold: 3,
+            successfulDeductions: 1,
+            stockUnsetSkipped: 0,
+            clampedCount: 0,
+            unknownRows: 0,
+            status: "COMPLETED",
+        });
+        expect(result.clampedItems).toEqual([]);
+
+        // 内容ハッシュが算出・保存されている
+        expect(result.contentHash).toMatch(/^[0-9a-f]{64}$/);
+        const savedImport = await prisma.csvImport.findUniqueOrThrow({ where: { id: result.importId } });
+        expect(savedImport.contentHash).toBe(result.contentHash);
 
         // 在庫が 10 → 7 に減算されている
         const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
@@ -183,6 +202,128 @@ describe("importProductSales (PRODUCT_SALES 確定 / $transaction)", () => {
         expect(await prisma.salesRecord.count()).toBe(0);
         // ゴースト（PENDING）が削除されている
         expect(await prisma.csvImport.count()).toBe(0);
+    });
+
+    it("クランプ: 在庫不足分は0に丸め、clampedItems に before/after/不足数を記録する", async () => {
+        // 在庫2に対し数量5 → -3 を 0 にクランプ
+        const product = await makeProduct("4900000000011", "昆布", 2);
+
+        const result = await importProductSales(
+            prisma,
+            {
+                records: [salesRow("4900000000011", "昆布", 5, 2500)],
+                filename: "sales-clamp.csv",
+                periodStart: PERIOD_START,
+                periodEnd: PERIOD_END,
+                overrideMap: new Map(),
+            },
+            userId
+        );
+
+        // 在庫は 0 にクランプ
+        const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+        expect(after.currentStock).toBe(0);
+
+        // サマリー: 成功減算0 / クランプ1
+        expect(result.summary.successfulDeductions).toBe(0);
+        expect(result.summary.clampedCount).toBe(1);
+
+        // clampedItems の中身
+        expect(result.clampedItems).toEqual([
+            {
+                productName: "昆布",
+                janCode: "4900000000011",
+                csvQuantity: 5,
+                stockBefore: 2,
+                stockAfter: 0,
+                shortage: 3,
+                importId: result.importId,
+                needsConfirmation: true,
+            },
+        ]);
+
+        // inventory_transactions のクランプマーカー（監査証跡）が残っている
+        const tx = await prisma.inventoryTransaction.findFirstOrThrow({ where: { productId: product.id } });
+        expect(tx.stockAfter).toBe(0);
+        expect(tx.note).toContain("クランプ");
+    });
+
+    it("未知JAN: 未マッチ行は自動登録され unknownRows(=autoCreatedCount) に計上される", async () => {
+        const result = await importProductSales(
+            prisma,
+            {
+                records: [salesRow("4911111111118", "新商品 A", 2, 800)],
+                filename: "sales-unknown.csv",
+                periodStart: PERIOD_START,
+                periodEnd: PERIOD_END,
+                overrideMap: new Map(),
+            },
+            userId
+        );
+
+        expect(result.autoCreatedCount).toBe(1);
+        expect(result.summary.unknownRows).toBe(1);
+
+        // 自動登録された商品は needsReview / isAutoCreated フラグ付き
+        const created = await prisma.product.findUniqueOrThrow({ where: { janCode: "4911111111118" } });
+        expect(created.isAutoCreated).toBe(true);
+        expect(created.needsReview).toBe(true);
+    });
+
+    it("重複検知(リネーム): 別ファイル名でも内容が同じなら findContentHashDuplicate が既存を返す", async () => {
+        const records = [salesRow("4900000000011", "昆布", 1, 500)];
+        await makeProduct("4900000000011", "昆布", 10);
+
+        // 1回目: ファイル名 original.csv で取込（COMPLETED）
+        const first = await importProductSales(
+            prisma,
+            { records, filename: "original.csv", periodStart: PERIOD_START, periodEnd: PERIOD_END, overrideMap: new Map() },
+            userId
+        );
+
+        // 同じ内容・別ファイル名(renamed.csv) のハッシュで重複検知 → 既存がヒット
+        const hash = computeContentHash(records);
+        const dup = await findContentHashDuplicate(prisma, { contentHash: hash, csvType: "PRODUCT_SALES" });
+        expect(dup).not.toBeNull();
+        expect(dup?.id).toBe(first.importId);
+        expect(dup?.filename).toBe("original.csv"); // 既存(別名)を指す＝リネームしても検知
+    });
+
+    it("重複検知(同一ハッシュ): 完全に同じCSVを再取込しようとすると既存がヒット", async () => {
+        const records = [salesRow("4900000000011", "昆布", 1, 500)];
+        await makeProduct("4900000000011", "昆布", 10);
+
+        const first = await importProductSales(
+            prisma,
+            { records, filename: "same.csv", periodStart: PERIOD_START, periodEnd: PERIOD_END, overrideMap: new Map() },
+            userId
+        );
+
+        const dup = await findContentHashDuplicate(prisma, {
+            contentHash: first.contentHash,
+            csvType: "PRODUCT_SALES",
+        });
+        expect(dup?.id).toBe(first.importId);
+    });
+
+    it("同名・別内容: 同じファイル名でも内容が違えば重複扱いしない（ブロックしない）", async () => {
+        await makeProduct("4900000000011", "昆布", 10);
+        await makeProduct("4900000000028", "わかめ", 10);
+
+        // 1回目: report.csv（昆布1点）
+        await importProductSales(
+            prisma,
+            { records: [salesRow("4900000000011", "昆布", 1, 500)], filename: "report.csv", periodStart: PERIOD_START, periodEnd: PERIOD_END, overrideMap: new Map() },
+            userId
+        );
+
+        // 2回目: 同名 report.csv だが内容が違う（わかめ2点）→ 別ハッシュ → 重複なし
+        const differentRecords = [salesRow("4900000000028", "わかめ", 2, 600)];
+        const dup = await findContentHashDuplicate(prisma, {
+            contentHash: computeContentHash(differentRecords),
+            csvType: "PRODUCT_SALES",
+        });
+        expect(dup).toBeNull();
     });
 });
 
@@ -286,6 +427,7 @@ async function createTemporarySchema(prisma: PrismaClient) {
       record_count INTEGER NOT NULL,
       user_id INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'PENDING',
+      content_hash TEXT,
       imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`,

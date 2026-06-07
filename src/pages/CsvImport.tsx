@@ -35,10 +35,40 @@ interface HistoryItem {
   user?: { name: string };
 }
 
+interface ImportSummary {
+  totalCsvRows: number;
+  salesRows: number;
+  totalQuantitySold: number;
+  successfulDeductions: number;
+  stockUnsetSkipped: number;
+  clampedCount: number;
+  unknownRows: number;
+  status: string;
+}
+
+interface ClampedItem {
+  productName: string;
+  janCode: string | null;
+  csvQuantity: number;
+  stockBefore: number;
+  stockAfter: number;
+  shortage: number;
+  importId: number;
+  needsConfirmation: boolean;
+}
+
 interface ImportResult {
   recordCount: number;
   newCount: number;
   autoCreatedCount?: number;
+  importId?: number;
+  importedAt?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  filename?: string;
+  duplicateStatus?: string;
+  summary?: ImportSummary;
+  clampedItems?: ClampedItem[];
 }
 
 interface StockPreviewMatched {
@@ -488,9 +518,28 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        setImportResult({ recordCount: data.recordCount, newCount: 0, autoCreatedCount: data.autoCreatedCount || 0 });
+        setImportResult({
+          recordCount: data.recordCount,
+          newCount: 0,
+          autoCreatedCount: data.autoCreatedCount || 0,
+          importId: data.importId,
+          importedAt: data.importedAt,
+          periodStart: data.periodStart,
+          periodEnd: data.periodEnd,
+          filename: data.filename,
+          duplicateStatus: data.duplicateStatus,
+          summary: data.summary,
+          clampedItems: data.clampedItems || [],
+        });
         setStep(3);
         toast({ title: "インポート完了", description: `${data.recordCount}件のデータを取り込みました` });
+      } else if (res.status === 409) {
+        // 内容ハッシュ重複: ハードブロック。「続行」ボタンは出さない（再取込はこのパスでは不可）。
+        toast({
+          title: "重複インポートをブロックしました",
+          description: data.error || "このCSVの内容は既にインポート済みです。",
+          variant: "destructive",
+        });
       } else {
         toast({ title: "エラー", description: data.error || "インポートに失敗しました", variant: "destructive" });
       }
@@ -882,13 +931,109 @@ const SalesImportTab = ({ toast }: { toast: any }) => {
             </div>
             <h2 className="text-xl font-semibold mb-2">インポート完了</h2>
             <p className="text-muted-foreground mb-6">CSVデータが正常に取り込まれました</p>
-            <div className="flex justify-center gap-8 mb-8 text-sm">
-              <div><span className="text-muted-foreground">取込件数: </span><span className="font-num font-semibold">{importResult?.recordCount || 0}件</span></div>
-              <div><span className="text-muted-foreground">在庫反映: </span><span className="font-num font-semibold text-edo-success">完了</span></div>
-              {(importResult?.autoCreatedCount || 0) > 0 && (
-                <div><span className="text-muted-foreground">新規自動登録: </span><span className="font-num font-semibold text-amber-400">{importResult?.autoCreatedCount}件</span></div>
-              )}
-            </div>
+
+            {/* インポート結果サマリー（PRODUCT_SALESのみ。MONTHLY_SALESは従来表示にフォールバック） */}
+            {importResult?.summary ? (
+              <div className="text-left max-w-2xl mx-auto mb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">インポート日時</p>
+                    <p className="font-num">{importResult.importedAt ? new Date(importResult.importedAt).toLocaleString("ja-JP") : "—"}</p>
+                  </div>
+                  <div className="col-span-1 sm:col-span-2">
+                    <p className="text-xs text-muted-foreground">対象期間</p>
+                    <p className="font-num">
+                      {importResult.periodStart ? new Date(importResult.periodStart).toLocaleDateString("ja-JP") : "—"}
+                      {" 〜 "}
+                      {importResult.periodEnd ? new Date(importResult.periodEnd).toLocaleDateString("ja-JP") : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">CSV総行数 / 売上明細行数</p>
+                    <p className="font-num font-semibold">{importResult.summary.totalCsvRows} / {importResult.summary.salesRows}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">売上数量合計</p>
+                    <p className="font-num font-semibold">{importResult.summary.totalQuantitySold}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">在庫減算成功</p>
+                    <p className="font-num font-semibold text-edo-success">{importResult.summary.successfulDeductions}件</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">在庫不足クランプ</p>
+                    <p className={cn("font-num font-semibold", importResult.summary.clampedCount > 0 ? "text-red-500" : "")}>{importResult.summary.clampedCount}件</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">未マッチ自動登録</p>
+                    <p className={cn("font-num font-semibold", importResult.summary.unknownRows > 0 ? "text-amber-400" : "")}>{importResult.summary.unknownRows}件</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">在庫未設定でスキップ</p>
+                    <p className="font-num font-semibold">{importResult.summary.stockUnsetSkipped}件</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">重複チェック</p>
+                    <p className="font-num font-semibold text-edo-success">重複なし</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">ステータス</p>
+                    <p className="font-num font-semibold text-edo-success">{importResult.summary.status}</p>
+                  </div>
+                </div>
+
+                {/* クランプ明細リスト（在庫不足で0に丸めた商品。要確認） */}
+                {importResult.clampedItems && importResult.clampedItems.length > 0 && (
+                  <div className="mt-6 border border-red-400/30 bg-red-400/5 rounded-lg p-4">
+                    <div className="flex items-start gap-2 mb-3">
+                      <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-red-500">在庫不足クランプ {importResult.clampedItems.length}件（在庫を0に丸めました。要確認）</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border/50 text-muted-foreground">
+                            <th className="text-left py-2 px-2 font-medium">商品名</th>
+                            <th className="text-left py-2 px-2 font-medium">JAN</th>
+                            <th className="text-right py-2 px-2 font-medium">CSV数量</th>
+                            <th className="text-right py-2 px-2 font-medium">減算前</th>
+                            <th className="text-right py-2 px-2 font-medium">減算後</th>
+                            <th className="text-right py-2 px-2 font-medium">不足数</th>
+                            <th className="text-right py-2 px-2 font-medium">取込ID</th>
+                            <th className="text-center py-2 px-2 font-medium">状態</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importResult.clampedItems.map((c, i) => (
+                            <tr key={i} className="border-b border-border/30">
+                              <td className="py-2 px-2 font-medium">{c.productName}</td>
+                              <td className="py-2 px-2 font-num text-muted-foreground">{c.janCode || "—"}</td>
+                              <td className="py-2 px-2 text-right font-num">{c.csvQuantity}</td>
+                              <td className="py-2 px-2 text-right font-num">{c.stockBefore}</td>
+                              <td className="py-2 px-2 text-right font-num">{c.stockAfter}</td>
+                              <td className="py-2 px-2 text-right font-num text-red-500 font-semibold">{c.shortage}</td>
+                              <td className="py-2 px-2 text-right font-num text-muted-foreground">#{c.importId}</td>
+                              <td className="py-2 px-2 text-center">
+                                <Badge variant="outline" className="text-[10px] text-red-500 border-red-400/50 px-1.5 py-0">要確認</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex justify-center gap-8 mb-8 text-sm">
+                <div><span className="text-muted-foreground">取込件数: </span><span className="font-num font-semibold">{importResult?.recordCount || 0}件</span></div>
+                <div><span className="text-muted-foreground">在庫反映: </span><span className="font-num font-semibold text-edo-success">完了</span></div>
+                {(importResult?.autoCreatedCount || 0) > 0 && (
+                  <div><span className="text-muted-foreground">新規自動登録: </span><span className="font-num font-semibold text-amber-400">{importResult?.autoCreatedCount}件</span></div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-center gap-3">
               <Button variant="outline" onClick={() => { setStep(0); setFile(null); setParsedRows([]); setImportResult(null); }}>続けてインポート</Button>
               <Button className="bg-primary hover:bg-primary/90" onClick={() => window.location.href = "/"}>ダッシュボードへ</Button>
