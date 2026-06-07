@@ -10,8 +10,16 @@ import {
     StockInInputError,
     StockInServiceError,
 } from "./inventory-stockin-service.js";
+import { getProductTransactions, ProductNotFoundError } from "./inventory-history-service.js";
 
 export const inventoryRouter = Router();
+
+// クエリ文字列の整数パース。未指定・空・非数値は undefined を返し、サービス側の既定値に委ねる。
+function parseOptionalInt(value: unknown): number | undefined {
+    if (typeof value !== "string" || value.trim() === "") return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+}
 
 inventoryRouter.get("/alerts", async (req, res) => {
     const department = req.query.department as string | undefined;
@@ -78,6 +86,31 @@ inventoryRouter.get("/alerts", async (req, res) => {
     }));
 
     res.json({ lowStockAlerts: alerts, reviewAlerts });
+});
+
+// GET /api/inventory/:productId/transactions — 商品単位の在庫変動履歴（新しい順 / read-only）
+// この商品の現在庫が「なぜその数なのか」を説明するための監査証跡を返す。
+// 認証は /api/inventory マウント時の requireAuth を継承（STAFF / ADMIN とも閲覧可）。
+inventoryRouter.get("/:productId/transactions", async (req, res) => {
+    const productId = parseInt(req.params.productId, 10);
+    if (Number.isNaN(productId) || productId <= 0) {
+        return res.status(400).json({ error: "商品IDが不正です" });
+    }
+
+    const limit = parseOptionalInt(req.query.limit);
+    const offset = parseOptionalInt(req.query.offset);
+    const type =
+        typeof req.query.type === "string" && req.query.type.trim() !== "" ? req.query.type : undefined;
+
+    try {
+        const result = await getProductTransactions(prisma, productId, { limit, offset, type });
+        res.json(result);
+    } catch (error: any) {
+        if (error instanceof ProductNotFoundError) {
+            return res.status(404).json({ error: error.message });
+        }
+        res.status(500).json({ error: error.message || "在庫履歴の取得に失敗しました" });
+    }
 });
 
 inventoryRouter.patch("/:id/deactivate", async (req, res) => {
