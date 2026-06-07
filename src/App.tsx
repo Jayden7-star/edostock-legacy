@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Inventory from "./pages/Inventory";
 import CsvImport from "./pages/CsvImport";
 import Alerts from "./pages/Alerts";
+import AutoCreatedProducts from "./pages/AutoCreatedProducts";
 import Stocktake from "./pages/Stocktake";
 import AbcAnalysis from "./pages/AbcAnalysis";
 import SeasonalAnalysis from "./pages/SeasonalAnalysis";
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/import" element={<CsvImport />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/auto-created" element={<AutoCreatedProducts />} />
             <Route path="/stocktake" element={<Stocktake />} />
             <Route path="/analytics/abc" element={<AbcAnalysis />} />
             <Route path="/analytics/seasonal" element={<SeasonalAnalysis />} />

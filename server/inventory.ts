@@ -11,6 +11,7 @@ import {
     StockInServiceError,
 } from "./inventory-stockin-service.js";
 import { getProductTransactions, ProductNotFoundError } from "./inventory-history-service.js";
+import { getAutoCreatedProducts } from "./auto-created-products-service.js";
 
 export const inventoryRouter = Router();
 
@@ -86,6 +87,29 @@ inventoryRouter.get("/alerts", async (req, res) => {
     }));
 
     res.json({ lowStockAlerts: alerts, reviewAlerts });
+});
+
+// GET /api/inventory/auto-created-products — 自動登録・要確認商品の監査台帳（read-only）
+// 取込で商品マスタに無いJANに対し自動作成された商品（is_auto_created=true、確認済み含む）を一覧する。
+// 静的GET群（/alerts と同様）に置き、動的 /:productId/transactions より前に登録する。
+// 認証は /api/inventory マウント時の requireAuth を継承（監査・確認用途のため STAFF も閲覧可。ADMIN限定にしない）。
+// read-only: service は findMany/count のみで、currentStock も inventory_transactions も変更しない。
+inventoryRouter.get("/auto-created-products", async (req, res) => {
+    try {
+        const result = await getAutoCreatedProducts(prisma, {
+            department: req.query.department as string | undefined,
+            reviewStatus: req.query.reviewStatus as string | undefined,
+            // placeholderOnly は文字列 "true" のときのみ true（それ以外・配列・未指定は false）。
+            placeholderOnly: req.query.placeholderOnly === "true",
+            search: req.query.search as string | undefined,
+            // 壊れた/未指定の値は undefined になり、service 側の正規化（既定値・範囲制限）に委ねる。
+            limit: parseOptionalInt(req.query.limit),
+            offset: parseOptionalInt(req.query.offset),
+        });
+        res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "自動登録商品一覧の取得に失敗しました" });
+    }
 });
 
 // GET /api/inventory/:productId/transactions — 商品単位の在庫変動履歴（新しい順 / read-only）
