@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Search, Filter, Package, Plus, Pencil, EyeOff, Eye, List, LayoutGrid, AlertTriangle, Save, Trash2 } from "lucide-react";
+import { Search, Filter, Package, Plus, Pencil, EyeOff, Eye, List, LayoutGrid, AlertTriangle, Save, Trash2, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { parseActualStockClient, parseStockInClient } from "@/lib/inventory-input";
 import { useSearchParams } from "react-router-dom";
+import ProductHistoryDialog from "@/components/inventory/ProductHistoryDialog";
 
 interface Product {
   id: number;
@@ -153,6 +154,9 @@ const Inventory = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"purchase" | "adjust">("purchase");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  // 在庫変動履歴モーダル（read-only。商品ごとに開く）
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -775,6 +779,15 @@ const Inventory = () => {
                               <Button
                                 size="sm"
                                 variant="ghost"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => { setHistoryProduct(p); setHistoryOpen(true); }}
+                                title="履歴"
+                              >
+                                <Clock className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 className="h-8 w-8 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
                                 onClick={() => handleDeactivate(p)}
                                 title="非表示"
@@ -957,6 +970,15 @@ const Inventory = () => {
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => { setHistoryProduct(p); setHistoryOpen(true); }}
+                            title="履歴"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-edo-warning hover:bg-edo-warning/10"
                             onClick={() => handleDeactivate(p)}
                             title="非表示"
@@ -1117,6 +1139,13 @@ const Inventory = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 在庫変動履歴モーダル（read-only） */}
+      <ProductHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        product={historyProduct}
+      />
     </div>
   );
 };
